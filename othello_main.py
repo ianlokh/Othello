@@ -246,21 +246,23 @@ def add_to_board(x_ind, y_ind, player):
     # draw the player's token on the screen
     draw_token(x_ind, y_ind, player[1], playerposlist)
 
-    flip_seq = []
 
-    def eval_cell(x, y, direction, player):
-        global flip_seq
+    def eval_cell(x, y, direction, player, _flip_seq, _flip_tokens):
         cell_value = game_board[x, y]
-        if cell_value == 0:
-            flip_seq = []
 
-        if player[0] != cell_value:
-            flip_seq.append([x_ind + x, y_ind + y])
+        if player[0] != cell_value and cell_value != 0:
+            _flip_seq.append([x, y])
+            _flip_tokens = False
 
-        if direction == 0 and y < game_board.shape[1]:
-            eval_cell(x, y + 1, direction, player)
+        if player[0] == cell_value:
+            _flip_tokens = True
 
-        return flip_seq
+        # recursion if there are still more cells to evaluate. The evalution and input to x and y depends on the
+        # direction
+        if direction == 0 and cell_value != 0 and (y < game_board.shape[1]):
+            _flip_tokens, _flip_seq = eval_cell(x, y + 1, direction, player, flip_seq, _flip_tokens)
+
+        return _flip_tokens, _flip_seq
 
 
     # validate the play and identify any captured positions
@@ -284,7 +286,8 @@ def add_to_board(x_ind, y_ind, player):
         #         else:
         #             flip_tokens = True
         #             break
-        flip_seq = eval_cell(0, 1, 0, player)
+        if direction == 0:
+            flip_tokens, flip_seq = eval_cell(x_ind + 0, y_ind + 1, 0, player, flip_seq, flip_tokens)
 
         if direction == 1:
             x = 1
@@ -429,17 +432,19 @@ def play_token(_x_pos, _y_pos):
 
         return x_index, y_index
 
-    # get the current player - which is the next player based on the current state of the board
-    player = get_player()
-
     # get the board index from the mouse position
     x_ind, y_ind = get_board_index(_x_pos, _y_pos)
 
     # check that this is a valid position
     if not check_board_pos(x_ind, y_ind):
         alert_popup("Error", "You cannot place a token here", "")
-    else:
-        add_to_board(x_ind, y_ind, player)
+        return
+
+    # get the current player - which is the next player based on the current state of the board
+    player = get_player()
+
+    # add the token to the board
+    add_to_board(x_ind, y_ind, player)
 
 
     # get the next player
@@ -476,22 +481,13 @@ def get_player():
     if curr_player < 0:
         curr_player = 1
         return white_player
-
-    if curr_player > 0:
+    elif curr_player > 0:
+        curr_player = -1
+        return black_player
+    elif curr_player == 0:
         curr_player = -1
         return black_player
 
-    if curr_player == 0:
-        curr_player = -1
-        return black_player
-
-    # value = np.sum(game_board)
-    # if value < 0:
-    #     return white_player
-    # elif value > 0:
-    #     return black_player
-    # elif value == 0:
-    #     return black_player  # black always takes the first turn
 
 
 def exitprogram():
@@ -541,7 +537,3 @@ if __name__ == '__main__':
     else:
         alert_popup("Game Completed", "Black Player is the Winner with " + str(final_score_black) + " points", "")
 
-    # print(playerposlist)
-    # print(game_board)
-    # print(white_player[0], white_player[1])
-    # print(np.sum(game_board))
