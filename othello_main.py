@@ -238,12 +238,29 @@ def calculate_score(_game_board):
     return score_white, score_black
 
 
+
 def add_to_board(x_ind, y_ind, player):
     # place the player on the board
     game_board[x_ind, y_ind] = player[0]
 
     # draw the player's token on the screen
     draw_token(x_ind, y_ind, player[1], playerposlist)
+
+    flip_seq = []
+
+    def eval_cell(x, y, direction, player):
+        global flip_seq
+        cell_value = game_board[x, y]
+        if cell_value == 0:
+            flip_seq = []
+
+        if player[0] != cell_value:
+            flip_seq.append([x_ind + x, y_ind + y])
+
+        if direction == 0 and y < game_board.shape[1]:
+            eval_cell(x, y + 1, direction, player)
+
+        return flip_seq
 
 
     # validate the play and identify any captured positions
@@ -253,20 +270,21 @@ def add_to_board(x_ind, y_ind, player):
         flip_tokens = False
 
         # if direction = 0, then we are checking up
-        if direction == 0:
-            x = 0
-            y = 1
-            while y_ind + y < game_board.shape[1]:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    y += 1
-                else:
-                    flip_tokens = True
-                    break
+        # if direction == 0:
+        #     x = 0
+        #     y = 1
+        #     while y_ind + y < game_board.shape[1]:
+        #         cell_value = game_board[x_ind + x, y_ind + y]
+        #         if cell_value == 0:
+        #             break
+        #
+        #         if player[0] != cell_value:
+        #             flip_seq.append([x_ind + x, y_ind + y])
+        #             y += 1
+        #         else:
+        #             flip_tokens = True
+        #             break
+        flip_seq = eval_cell(0, 1, 0, player)
 
         if direction == 1:
             x = 1
