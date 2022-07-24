@@ -248,21 +248,50 @@ def add_to_board(x_ind, y_ind, player):
 
 
     def eval_cell(x, y, direction, player, _flip_seq, _flip_tokens):
-        cell_value = game_board[x, y]
 
-        if player[0] != cell_value and cell_value != 0:
-            _flip_seq.append([x, y])
-            _flip_tokens = False
+        try:
+            cell_value = game_board[x, y]
 
-        if player[0] == cell_value:
-            _flip_tokens = True
+            if cell_value == 0:
+                return _flip_tokens, _flip_seq
 
-        # recursion if there are still more cells to evaluate. The evalution and input to x and y depends on the
-        # direction
-        if direction == 0 and cell_value != 0 and (y < game_board.shape[1]):
-            _flip_tokens, _flip_seq = eval_cell(x, y + 1, direction, player, flip_seq, _flip_tokens)
+            if player[0] != cell_value:
+                _flip_seq.append([x, y])
+                _flip_tokens = False
+            else:
+                _flip_tokens = True
+                return _flip_tokens, _flip_seq
 
-        return _flip_tokens, _flip_seq
+            # recursion if there are still more cells to evaluate. The evalution and input to x and y depends on the
+            # direction
+            if direction == 0 and cell_value != 0 and (y < game_board.shape[1]):
+                _flip_tokens, _flip_seq = eval_cell(x, y + 1, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 1 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x + 1, y + 1, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 2 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x + 1, y, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 3 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x + 1, y - 1, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 4 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x, y - 1, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 5 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x - 1, y - 1, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 6 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x - 1, y, direction, player, flip_seq, _flip_tokens)
+
+            if direction == 7 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x - 1, y + 1, direction, player, flip_seq, _flip_tokens)
+
+            # return at the end of the recursion
+            return _flip_tokens, _flip_seq
+        except (IndexError, ValueError):
+            return False, []
 
 
     # validate the play and identify any captured positions
@@ -271,132 +300,29 @@ def add_to_board(x_ind, y_ind, player):
         flip_seq = []
         flip_tokens = False
 
-        # if direction = 0, then we are checking up
-        # if direction == 0:
-        #     x = 0
-        #     y = 1
-        #     while y_ind + y < game_board.shape[1]:
-        #         cell_value = game_board[x_ind + x, y_ind + y]
-        #         if cell_value == 0:
-        #             break
-        #
-        #         if player[0] != cell_value:
-        #             flip_seq.append([x_ind + x, y_ind + y])
-        #             y += 1
-        #         else:
-        #             flip_tokens = True
-        #             break
         if direction == 0:
-            flip_tokens, flip_seq = eval_cell(x_ind + 0, y_ind + 1, 0, player, flip_seq, flip_tokens)
+            flip_tokens, flip_seq = eval_cell(x_ind, y_ind + 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 1:
-            x = 1
-            y = 1
-            while y_ind + y < game_board.shape[1] and x_ind + x < game_board.shape[0]:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    x += 1
-                    y += 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind + 1, y_ind + 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 2:
-            x = 1
-            y = 0
-            while x_ind + x < game_board.shape[0]:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    x += 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind + 1, y_ind, direction, player, flip_seq, flip_tokens)
 
         if direction == 3:
-            x = 1
-            y = -1
-            while y_ind + y >= 0 and x_ind + x < game_board.shape[0]:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    x += 1
-                    y -= 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind + 1, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 4:
-            x = 0
-            y = -1
-            while y_ind + y >= 0:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    y -= 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 5:
-            x = -1
-            y = -1
-            while y_ind + y >= 0 and x_ind + x >= 0:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    x -= 1
-                    y -= 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind -1 , y_ind - 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 6:
-            x = -1
-            y = 0
-            while x_ind + x >= 0:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    x -= 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind, direction, player, flip_seq, flip_tokens)
 
         if direction == 7:
-            x = -1
-            y = 1
-            while y_ind + y < game_board.shape[1] and x_ind + x >= 0:
-                cell_value = game_board[x_ind + x, y_ind + y]
-                if cell_value == 0:
-                    break
-
-                if player[0] != cell_value:
-                    flip_seq.append([x_ind + x, y_ind + y])
-                    x -= 1
-                    y += 1
-                else:
-                    flip_tokens = True
-                    break
+            flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind + 1, direction, player, flip_seq, flip_tokens)
 
         # if there is a valid capture and the list of captured positions is > 0
         if flip_tokens and len(flip_seq) > 0:
@@ -536,4 +462,3 @@ if __name__ == '__main__':
         alert_popup("Game Completed", "White Player is the Winner with " + str(final_score_white) + " points", "")
     else:
         alert_popup("Game Completed", "Black Player is the Winner with " + str(final_score_black) + " points", "")
-
