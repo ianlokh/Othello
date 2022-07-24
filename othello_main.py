@@ -437,11 +437,11 @@ def play_token(_x_pos, _y_pos):
     score.hideturtle()
     score.penup()
     score.goto(0, -(window.window_height() / 2) + 700)
-    score.write(player[2] + " score:" + str(_score_white), align="center", font=("Courier", 24, "bold"))
+    score.write(white_player[2] + " score:" + str(_score_white), align="center", font=("Courier", 24, "bold"))
 
     score.penup()
     score.goto(0, -(window.window_height() / 2) + 670)
-    score.write(next_player[2] + " score:" + str(_score_black), align="center", font=("Courier", 24, "bold"))
+    score.write(black_player[2] + " score:" + str(_score_black), align="center", font=("Courier", 24, "bold"))
 
 
     # write instructions for next player
