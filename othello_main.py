@@ -270,22 +270,22 @@ def add_to_board(x_ind, y_ind, player):
             if direction == 1 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
                 _flip_tokens, _flip_seq = eval_cell(x + 1, y + 1, direction, player, flip_seq, _flip_tokens)
 
-            if direction == 2 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+            if direction == 2 and cell_value != 0 and (x < game_board.shape[0]):
                 _flip_tokens, _flip_seq = eval_cell(x + 1, y, direction, player, flip_seq, _flip_tokens)
 
-            if direction == 3 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+            if direction == 3 and cell_value != 0 and (y >= 0 and x < game_board.shape[0]):
                 _flip_tokens, _flip_seq = eval_cell(x + 1, y - 1, direction, player, flip_seq, _flip_tokens)
 
-            if direction == 4 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+            if direction == 4 and cell_value != 0 and (y >= 0):
                 _flip_tokens, _flip_seq = eval_cell(x, y - 1, direction, player, flip_seq, _flip_tokens)
 
-            if direction == 5 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+            if direction == 5 and cell_value != 0 and (y >= 0 and x >= 0):
                 _flip_tokens, _flip_seq = eval_cell(x - 1, y - 1, direction, player, flip_seq, _flip_tokens)
 
-            if direction == 6 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+            if direction == 6 and cell_value != 0 and (x >= 0):
                 _flip_tokens, _flip_seq = eval_cell(x - 1, y, direction, player, flip_seq, _flip_tokens)
 
-            if direction == 7 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+            if direction == 7 and cell_value != 0 and (y < game_board.shape[1] and x >= 0):
                 _flip_tokens, _flip_seq = eval_cell(x - 1, y + 1, direction, player, flip_seq, _flip_tokens)
 
             # return at the end of the recursion
@@ -316,7 +316,7 @@ def add_to_board(x_ind, y_ind, player):
             flip_tokens, flip_seq = eval_cell(x_ind, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 5:
-            flip_tokens, flip_seq = eval_cell(x_ind -1 , y_ind - 1, direction, player, flip_seq, flip_tokens)
+            flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
         if direction == 6:
             flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind, direction, player, flip_seq, flip_tokens)
