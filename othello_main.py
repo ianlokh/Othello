@@ -163,7 +163,6 @@ def init_board(_poslist):
 
 # Function that returns all adjacent elements
 def getAdjacent(arr, i, j):
-
     def isValidPos(i, j, n, m):
         if i < 0 or j < 0 or i > n - 1 or j > m - 1:
             return 0
@@ -238,7 +237,6 @@ def calculate_score(_game_board):
     return score_white, score_black
 
 
-
 def add_to_board(x_ind, y_ind, player):
     # place the player on the board
     game_board[x_ind, y_ind] = player[0]
@@ -246,9 +244,7 @@ def add_to_board(x_ind, y_ind, player):
     # draw the player's token on the screen
     draw_token(x_ind, y_ind, player[1], playerposlist)
 
-
-    def eval_cell(x, y, direction, player, _flip_seq, _flip_tokens):
-
+    def eval_cell(x, y, _direction, _player, _flip_seq, _flip_tokens):
         try:
             cell_value = game_board[x, y]
 
@@ -264,35 +260,34 @@ def add_to_board(x_ind, y_ind, player):
 
             # recursion if there are still more cells to evaluate. The evalution and input to x and y depends on the
             # direction
-            if direction == 0 and cell_value != 0 and (y < game_board.shape[1]):
-                _flip_tokens, _flip_seq = eval_cell(x, y + 1, direction, player, flip_seq, _flip_tokens)
+            if _direction == 0 and cell_value != 0 and (y < game_board.shape[1]):
+                _flip_tokens, _flip_seq = eval_cell(x, y + 1, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 1 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
-                _flip_tokens, _flip_seq = eval_cell(x + 1, y + 1, direction, player, flip_seq, _flip_tokens)
+            if _direction == 1 and cell_value != 0 and (y < game_board.shape[1] and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x + 1, y + 1, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 2 and cell_value != 0 and (x < game_board.shape[0]):
-                _flip_tokens, _flip_seq = eval_cell(x + 1, y, direction, player, flip_seq, _flip_tokens)
+            if _direction == 2 and cell_value != 0 and (x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x + 1, y, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 3 and cell_value != 0 and (y >= 0 and x < game_board.shape[0]):
-                _flip_tokens, _flip_seq = eval_cell(x + 1, y - 1, direction, player, flip_seq, _flip_tokens)
+            if _direction == 3 and cell_value != 0 and (y >= 0 and x < game_board.shape[0]):
+                _flip_tokens, _flip_seq = eval_cell(x + 1, y - 1, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 4 and cell_value != 0 and (y >= 0):
-                _flip_tokens, _flip_seq = eval_cell(x, y - 1, direction, player, flip_seq, _flip_tokens)
+            if _direction == 4 and cell_value != 0 and (y >= 0):
+                _flip_tokens, _flip_seq = eval_cell(x, y - 1, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 5 and cell_value != 0 and (y >= 0 and x >= 0):
-                _flip_tokens, _flip_seq = eval_cell(x - 1, y - 1, direction, player, flip_seq, _flip_tokens)
+            if _direction == 5 and cell_value != 0 and (y >= 0 and x >= 0):
+                _flip_tokens, _flip_seq = eval_cell(x - 1, y - 1, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 6 and cell_value != 0 and (x >= 0):
-                _flip_tokens, _flip_seq = eval_cell(x - 1, y, direction, player, flip_seq, _flip_tokens)
+            if _direction == 6 and cell_value != 0 and (x >= 0):
+                _flip_tokens, _flip_seq = eval_cell(x - 1, y, _direction, _player, flip_seq, _flip_tokens)
 
-            if direction == 7 and cell_value != 0 and (y < game_board.shape[1] and x >= 0):
-                _flip_tokens, _flip_seq = eval_cell(x - 1, y + 1, direction, player, flip_seq, _flip_tokens)
+            if _direction == 7 and cell_value != 0 and (y < game_board.shape[1] and x >= 0):
+                _flip_tokens, _flip_seq = eval_cell(x - 1, y + 1, _direction, _player, flip_seq, _flip_tokens)
 
             # return at the end of the recursion
             return _flip_tokens, _flip_seq
         except (IndexError, ValueError):
             return False, []
-
 
     # validate the play and identify any captured positions
     for direction in range(8):
@@ -334,11 +329,9 @@ def add_to_board(x_ind, y_ind, player):
             print(game_board)
 
 
-
 # place the token based on the mouse click position x, y
 # this function will then execute all the logic of the game
 def play_token(_x_pos, _y_pos):
-
     # get board index from mouse click x, y pos
     def get_board_index(_x_pos, _y_pos):
         # find the closest index for x, y coordinate
@@ -372,13 +365,11 @@ def play_token(_x_pos, _y_pos):
     # add the token to the board
     add_to_board(x_ind, y_ind, player)
 
-
     # get the next player
     if curr_player == -1:
         next_player = white_player
     else:
         next_player = black_player
-
 
     # display white and black score
     _score_white, _score_black = calculate_score(game_board)
@@ -391,7 +382,6 @@ def play_token(_x_pos, _y_pos):
     score.penup()
     score.goto(0, -(window.window_height() / 2) + 670)
     score.write(black_player[2] + " score:" + str(_score_black), align="center", font=("Courier", 24, "bold"))
-
 
     # write instructions for next player
     instruction.clear()
@@ -415,12 +405,13 @@ def get_player():
         return black_player
 
 
-
 def exitprogram():
     window.bye()
 
 
 def close():
+    score.clear()
+    instruction.clear()
     close_msg = turtle.Turtle()
     close_msg.speed(0)
     close_msg.penup()
