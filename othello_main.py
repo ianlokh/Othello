@@ -163,7 +163,6 @@ def init_board(_poslist):
 
 # Function that returns all adjacent elements
 def getAdjacent(arr, i, j):
-
     def isValidPos(i, j, n, m):
         if i < 0 or j < 0 or i > n - 1 or j > m - 1:
             return 0
@@ -330,11 +329,9 @@ def add_to_board(x_ind, y_ind, player):
             print(game_board)
 
 
-
 # place the token based on the mouse click position x, y
 # this function will then execute all the logic of the game
 def play_token(_x_pos, _y_pos):
-
     # get board index from mouse click x, y pos
     def get_board_index(_x_pos, _y_pos):
         # find the closest index for x, y coordinate
@@ -406,7 +403,6 @@ def get_player():
     elif curr_player == 0:
         curr_player = -1
         return black_player
-
 
 
 def exitprogram():
