@@ -11,8 +11,7 @@ import numpy as np
 import time
 
 # Making the coordinate arrays
-# gridpos = [-150, -100, -50, 0, 50, 100, 150] # 7 lines = 8 grids
-gridpos = [-150, -100, -50, 0, 50, 100, 150]
+gridpos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
 black_player = [-1, "#000000", "Player 1 (Black)"]
 white_player = [1, "#FFFFFF", "Player 2 (White)"]
 
@@ -56,9 +55,10 @@ def alert_popup(title, message, path):
 # We will draws a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
 # called playerposlist. The values in this will be 25 away from each value in gridpos, because our grid boxes are 50x50.
 # So, we'll start at -225, then -175, -125, etc.
-# Note that because the gridpos are actually position of the lines, therefore the number of boxes will be 1 + no of lines
-# thus the playerposlist should be = 1+len(gridpos).  When we populate this array of positions, we need to then make sure
-# that the center (i.e. where gridpos[i] == 0) translates into 2 positions of the playerposlist[i] and playerposlist[i+1]
+# Note that because the gridpos are actually position of the lines, therefore the number of boxes will be 1 + no of
+# lines thus the playerposlist should be = 1+len(gridpos).  When we populate this array of positions, we need to then
+# make sure that the center (i.e. where gridpos[i] == 0) translates into 2 positions of the playerposlist[i] and
+# playerposlist[i+1]
 def generate_player_pos_list(_gridpos):
     lst = [None] * (len(_gridpos) + 1)
     for i in range(len(_gridpos)):
@@ -79,7 +79,8 @@ def draw_board(_gridpos):
     grid_pos_y = max(_gridpos) + 50 + border
     grid_length = grid_pos_x + grid_pos_x
 
-    # Set this int to a number between 0 and 10, inclusive, to change the speed. Usually, lower is slower, except in the case of 0, which is the fastest possible.
+    # Set this int to a number between 0 and 10, inclusive, to change the speed. Usually, lower is slower, except in the
+    # case of 0, which is the fastest possible.
     speed = 0
     if speed < 0 or speed > 10:
         raise Exception("Speed out of range! Please input a value between 0 and 10 (inclusive)")
@@ -162,8 +163,8 @@ def init_board(_poslist):
 
 
 # Function that returns all adjacent elements
-def getAdjacent(arr, i, j):
-    def isValidPos(i, j, n, m):
+def get_adjacent(arr, i, j):
+    def is_valid_pos(i, j, n, m):
         if i < 0 or j < 0 or i > n - 1 or j > m - 1:
             return 0
         return 1
@@ -177,28 +178,28 @@ def getAdjacent(arr, i, j):
 
     # Checking for all the possible adjacent positions
     # bottom left
-    if isValidPos(i - 1, j - 1, n, m):
+    if is_valid_pos(i - 1, j - 1, n, m):
         v.append(arr[i - 1][j - 1])
     # left
-    if isValidPos(i - 1, j, n, m):
+    if is_valid_pos(i - 1, j, n, m):
         v.append(arr[i - 1][j])
     # top left
-    if isValidPos(i - 1, j + 1, n, m):
+    if is_valid_pos(i - 1, j + 1, n, m):
         v.append(arr[i - 1][j + 1])
     # top
-    if isValidPos(i, j - 1, n, m):
+    if is_valid_pos(i, j - 1, n, m):
         v.append(arr[i][j - 1])
     # top right
-    if isValidPos(i, j + 1, n, m):
+    if is_valid_pos(i, j + 1, n, m):
         v.append(arr[i][j + 1])
     # right
-    if isValidPos(i + 1, j - 1, n, m):
+    if is_valid_pos(i + 1, j - 1, n, m):
         v.append(arr[i + 1][j - 1])
     # bottom right
-    if isValidPos(i + 1, j, n, m):
+    if is_valid_pos(i + 1, j, n, m):
         v.append(arr[i + 1][j])
     # bottom
-    if isValidPos(i + 1, j + 1, n, m):
+    if is_valid_pos(i + 1, j + 1, n, m):
         v.append(arr[i + 1][j + 1])
 
     # Returning the vector
@@ -207,7 +208,7 @@ def getAdjacent(arr, i, j):
 
 def check_board_pos(x_ind, y_ind):
     # get all the adjacent cells
-    adj = getAdjacent(game_board, x_ind, y_ind)
+    adj = get_adjacent(game_board, x_ind, y_ind)
     adj_sum = 0
     for i in range(len(adj)):
         adj_sum += abs(adj[i])
@@ -248,17 +249,20 @@ def add_to_board(x_ind, y_ind, player):
         try:
             cell_value = game_board[x, y]
 
+            # if the cell is a 0 then end the recursion and return the flip state and token list as what is recorded
+            # thus far
             if cell_value == 0:
                 return _flip_tokens, _flip_seq
 
+            # if the cell is not the player's cell then mark for flipping
             if player[0] != cell_value:
                 _flip_seq.append([x, y])
                 _flip_tokens = False
-            else:
+            else:  # if the cell is the player's token then end the recursion
                 _flip_tokens = True
                 return _flip_tokens, _flip_seq
 
-            # recursion if there are still more cells to evaluate. The evalution and input to x and y depends on the
+            # recursion if there are still more cells to evaluate. The evaluation and input to x and y depends on the
             # direction
             if _direction == 0 and cell_value != 0 and (y < game_board.shape[1]):
                 _flip_tokens, _flip_seq = eval_cell(x, y + 1, _direction, _player, flip_seq, _flip_tokens)
@@ -336,9 +340,9 @@ def play_token(_x_pos, _y_pos):
     def get_board_index(_x_pos, _y_pos):
         # find the closest index for x, y coordinate
         x_index = 0
-        curr_x_diff = 50  # set to 50 because it is the width of the grid and is also the max distance from the mouse pos to the grid
+        curr_x_diff = 50  # set to 50 because it is the max distance from the mouse pos to the grid
         y_index = 0
-        curr_y_diff = 50  # set to 50 because it is the width of the grid and is also the max distance from the mouse pos to the grid
+        curr_y_diff = 50  # set to 50 because it is the max distance from the mouse pos to the grid
         # find the closest index for x y coordinate
         for i in range(len(playerposlist)):
             if curr_x_diff > abs(playerposlist[i] - _x_pos):
