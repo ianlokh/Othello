@@ -379,6 +379,7 @@ def play_token(_x_pos, _y_pos):
     _score_white, _score_black = calculate_score(game_board)
     score.clear()
     score.hideturtle()
+
     score.penup()
     score.goto(0, -(window.window_height() / 2) + 700)
     score.write(white_player[2] + " score:" + str(_score_white), align="center", font=("Courier", 24, "bold"))
@@ -393,6 +394,7 @@ def play_token(_x_pos, _y_pos):
     instruction.hideturtle()
     instruction.goto(0, -(window.window_height() / 2) + 100)
     instruction.write(next_player[2] + " To Play", align="center", font=("Courier", 24, "bold"))
+
 
 
 def get_player():
