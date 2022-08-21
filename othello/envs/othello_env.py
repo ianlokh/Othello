@@ -8,19 +8,25 @@ import turtle, sys
 from tkinter import *
 
 import numpy as np
+import gym
+from gym import error, spaces, utils
+from gym.utils import seeding
+
 import time
 
 # Making the coordinate arrays
 gridpos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
-black_player = {"id":-1, "colour":"#000000", "label":"Player 1 (Black)"}
-white_player = {"id":1, "colour":"#FFFFFF", "label":"Player 2 (White)"}
+black_player = {"id":-1, "colour":"#000000", "label":"Player 1 (Black)", "score":0}
+white_player = {"id":1, "colour":"#FFFFFF", "label":"Player 2 (White)", "score":0}
 # black_player = [-1, "#000000", "Player 1 (Black)"]
 # white_player = [1, "#FFFFFF", "Player 2 (White)"]
 
 '''
-Othello game class
+Othello game env
 '''
-class Othello():
+class OthelloEnv(gym.Env):
+
+    metadata = {'render_modes':['human']}
 
     def __init__(self):
         '''
@@ -57,6 +63,11 @@ class Othello():
         self.window = turtle.Screen()
         self.window.bgcolor("#444444")
 
+        # define action space
+        self.action_space = spaces.Discrete(64)  # 8x8 possible positions
+        self.STEP_LIMIT = 1000  # safe guard to ensure agent doesn't get stuck in a loop
+        self.sleep = 0  # slow the rendering for human
+
         # reset game environment
         self.reset()
 
@@ -76,7 +87,7 @@ class Othello():
         # variable for player turn
         self.curr_player = 0
 
-        print("Game Reset.")
+        return self.game_board
 
     def play(self):
         # each mouse click is to place the token
@@ -208,7 +219,7 @@ class Othello():
         self.draw_token(3, 4, white_player['colour'], _poslist)
         self.draw_token(4, 3, white_player['colour'], _poslist)
 
-        # write for next player - first player always black
+        # write for next player
         self.instruction.clear()
         self.instruction.penup()
         self.instruction.hideturtle()
@@ -270,6 +281,21 @@ class Othello():
         # Returning the vector
         return v
 
+    def check_board_pos(self, x_ind, y_ind):
+        # get all the adjacent cells
+        adj = self.get_adjacent(self.game_board, x_ind, y_ind)
+        adj_sum = 0
+        for i in range(len(adj)):
+            adj_sum += abs(adj[i])
+
+        # position must be either 0 or near an already placed token
+        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0:
+            valid_pos = True
+        else:
+            valid_pos = False
+
+        return valid_pos
+
     @staticmethod
     def calculate_score(_game_board):
         # calculate score the score
@@ -285,21 +311,6 @@ class Othello():
                     score_black += 1
 
         return score_white, score_black
-
-    def check_board_pos(self, x_ind, y_ind):
-        # get all the adjacent cells
-        adj = self.get_adjacent(self.game_board, x_ind, y_ind)
-        adj_sum = 0
-        for i in range(len(adj)):
-            adj_sum += abs(adj[i])
-
-        # position must be either 0 or near an already placed token
-        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0:
-            valid_pos = True
-        else:
-            valid_pos = False
-
-        return valid_pos
 
     def add_to_board(self, x_ind, y_ind, player):
         # place the player on the board
@@ -387,16 +398,20 @@ class Othello():
 
             # if there is a valid capture and the list of captured positions is > 0
             if flip_tokens and len(flip_seq) > 0:
-                # print(direction, flip_seq)
+                print(direction, flip_seq)
                 # flip all captured positions
                 for i in range(len(flip_seq)):
                     self.game_board[flip_seq[i][0], flip_seq[i][1]] = player['id']
                     self.draw_token(flip_seq[i][0], flip_seq[i][1], player['colour'], self.playerposlist)
-                # print(self.game_board)
+                print(self.game_board)
 
-    # place the token based on the mouse click position x, y
-    # this function will then execute all the logic of the game
-    def play_token(self, _x_pos, _y_pos):
+    # place the token based on the mouse click position x, y this function will then execute all the logic of the game
+    # change from play_token to step
+    def step(self, action):
+
+
+
+
         # get board index from mouse click x, y pos
         def get_board_index(_x_pos, _y_pos):
             # find the closest index for x, y coordinate
@@ -416,9 +431,10 @@ class Othello():
 
             return x_index, y_index
 
+        # action as coordinates
+
         # get the board index from the mouse position
         x_ind, y_ind = get_board_index(_x_pos, _y_pos)
-        print(x_ind, y_ind)
 
         # check that this is a valid position
         if not self.check_board_pos(x_ind, y_ind):
@@ -461,7 +477,12 @@ class Othello():
             self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
             self.instruction.write(next_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
-    def exit_program(self):
+        # return game board as observations
+        observations = self.game_board
+
+        return observations, reward, done, info
+
+    def exitprogram(self):
         self.window.bye()
         sys.exit()
 
@@ -477,21 +498,4 @@ class Othello():
         close_msg.write("Press ESC again to exit", align="center", font=("Courier", 24, "bold"))
 
         self.window.listen()
-        self.window.onkeypress(self.exit_program, "Escape")
-
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-
-    # initialise game
-    game = Othello()
-    # play game
-    game.play()
-
-    # calculate final score
-    final_score_white, final_score_black = game.calculate_score(game.game_board)
-    # display winner
-    if final_score_white > final_score_black:
-        game.alert_popup("Game Completed", "White Player is the Winner with " + str(final_score_white) + " points", "")
-    else:
-        game.alert_popup("Game Completed", "Black Player is the Winner with " + str(final_score_black) + " points", "")
+        self.window.onkeypress(self.exitprogram, "Escape")
