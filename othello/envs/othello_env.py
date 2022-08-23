@@ -64,7 +64,10 @@ class OthelloEnv(gym.Env):
         self.window.bgcolor("#444444")
 
         # define action space
-        self.action_space = spaces.Discrete(64)  # 8x8 possible positions
+        self.action_space = spaces.Discrete(8 * 8)  # 8x8 possible positions
+        self.next_possible_actions = set()  # a set of the possible coordinates (row, col) for the next player
+        self.show_next_possible_actions_hint = True  # if True, show a red plus sign in the grid where the player is allowed to put a piece
+
         self.STEP_LIMIT = 1000  # safe guard to ensure agent doesn't get stuck in a loop
         self.sleep = 0  # slow the rendering for human
 
@@ -281,21 +284,6 @@ class OthelloEnv(gym.Env):
         # Returning the vector
         return v
 
-    def check_board_pos(self, x_ind, y_ind):
-        # get all the adjacent cells
-        adj = self.get_adjacent(self.game_board, x_ind, y_ind)
-        adj_sum = 0
-        for i in range(len(adj)):
-            adj_sum += abs(adj[i])
-
-        # position must be either 0 or near an already placed token
-        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0:
-            valid_pos = True
-        else:
-            valid_pos = False
-
-        return valid_pos
-
     @staticmethod
     def calculate_score(_game_board):
         # calculate score the score
@@ -312,60 +300,84 @@ class OthelloEnv(gym.Env):
 
         return score_white, score_black
 
+    def check_board_pos(self, x_ind, y_ind):
+        # get all the adjacent cells
+        adj = self.get_adjacent(self.game_board, x_ind, y_ind)
+        adj_sum = 0
+        for i in range(len(adj)):
+            adj_sum += abs(adj[i])
+
+        # position must be either 0 or near an already placed token
+        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0:
+            valid_pos = True
+        else:
+            valid_pos = False
+
+        return valid_pos
+
+    def get_valid_board_pos(self, player):
+        assert player in (black_player, black_player), "illegal player input"
+        valid_positions = set()
+        return valid_positions
+
+    def eval_cell(self, x, y, _direction, _player, _flip_seq, _flip_tokens):
+        try:
+            cell_value = self.game_board[x, y]
+
+            # if the cell is a 0 or out of bounds then end the recursion and return the current flip state and token
+            # list as what is recorded thus far
+            if (cell_value == 0) or (y < 0 or y >= 8) or (x < 0 or x >= 8):
+                return _flip_tokens, _flip_seq
+
+            # if the cell is not the player's cell then mark for flipping
+            if _player['id'] != cell_value:
+                _flip_seq.append([x, y])
+                _flip_tokens = False
+            elif _player['id'] == cell_value:  # if the cell is the player's token then end the recursion
+                _flip_tokens = True
+                return _flip_tokens, _flip_seq
+
+            # recursion if there are still more cells to evaluate. The evaluation and input to x and y depends on the
+            # direction
+            if _direction == 0 and cell_value != 0 and (y < self.game_board.shape[1]):
+                _flip_tokens, _flip_seq = self.eval_cell(x, y + 1, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 1 and cell_value != 0 and (
+                    y < self.game_board.shape[1] and x < self.game_board.shape[0]):
+                _flip_tokens, _flip_seq = self.eval_cell(x + 1, y + 1, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 2 and cell_value != 0 and (x < self.game_board.shape[0]):
+                _flip_tokens, _flip_seq = self.eval_cell(x + 1, y, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 3 and cell_value != 0 and (y >= 0 and x < self.game_board.shape[0]):
+                _flip_tokens, _flip_seq = self.eval_cell(x + 1, y - 1, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 4 and cell_value != 0 and (y >= 0):
+                _flip_tokens, _flip_seq = self.eval_cell(x, y - 1, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 5 and cell_value != 0 and (y >= 0 and x >= 0):
+                _flip_tokens, _flip_seq = self.eval_cell(x - 1, y - 1, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 6 and cell_value != 0 and (x >= 0):
+                _flip_tokens, _flip_seq = self.eval_cell(x - 1, y, _direction, _player, _flip_seq, _flip_tokens)
+
+            if _direction == 7 and cell_value != 0 and (y < self.game_board.shape[1] and x >= 0):
+                _flip_tokens, _flip_seq = self.eval_cell(x - 1, y + 1, _direction, _player, _flip_seq, _flip_tokens)
+
+            # return at the end of the recursion
+            return _flip_tokens, _flip_seq
+        except (IndexError, ValueError):
+            return False, []
+
     def add_to_board(self, x_ind, y_ind, player):
+        # check that player is a valid player
+        assert player in (black_player, white_player), "illegal player input"
+
         # place the player on the board
         self.game_board[x_ind, y_ind] = player['id']
 
         # draw the player's token on the screen
         self.draw_token(x_ind, y_ind, player['colour'], self.playerposlist)
-
-        def eval_cell(x, y, _direction, _player, _flip_seq, _flip_tokens):
-            try:
-                cell_value = self.game_board[x, y]
-
-                # if the cell is a 0 or out of bounds then end the recursion and return the current flip state and token
-                # list as what is recorded thus far
-                if (cell_value == 0) or (y < 0 or y >= 8) or (x < 0 or x >= 8):
-                    return _flip_tokens, _flip_seq
-
-                # if the cell is not the player's cell then mark for flipping
-                if player['id'] != cell_value:
-                    _flip_seq.append([x, y])
-                    _flip_tokens = False
-                elif player['id'] == cell_value:  # if the cell is the player's token then end the recursion
-                    _flip_tokens = True
-                    return _flip_tokens, _flip_seq
-
-                # recursion if there are still more cells to evaluate. The evaluation and input to x and y depends on the
-                # direction
-                if _direction == 0 and cell_value != 0 and (y < self.game_board.shape[1]):
-                    _flip_tokens, _flip_seq = eval_cell(x, y + 1, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 1 and cell_value != 0 and (y < self.game_board.shape[1] and x < self.game_board.shape[0]):
-                    _flip_tokens, _flip_seq = eval_cell(x + 1, y + 1, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 2 and cell_value != 0 and (x < self.game_board.shape[0]):
-                    _flip_tokens, _flip_seq = eval_cell(x + 1, y, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 3 and cell_value != 0 and (y >= 0 and x < self.game_board.shape[0]):
-                    _flip_tokens, _flip_seq = eval_cell(x + 1, y - 1, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 4 and cell_value != 0 and (y >= 0):
-                    _flip_tokens, _flip_seq = eval_cell(x, y - 1, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 5 and cell_value != 0 and (y >= 0 and x >= 0):
-                    _flip_tokens, _flip_seq = eval_cell(x - 1, y - 1, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 6 and cell_value != 0 and (x >= 0):
-                    _flip_tokens, _flip_seq = eval_cell(x - 1, y, _direction, _player, flip_seq, _flip_tokens)
-
-                if _direction == 7 and cell_value != 0 and (y < self.game_board.shape[1] and x >= 0):
-                    _flip_tokens, _flip_seq = eval_cell(x - 1, y + 1, _direction, _player, flip_seq, _flip_tokens)
-
-                # return at the end of the recursion
-                return _flip_tokens, _flip_seq
-            except (IndexError, ValueError):
-                return False, []
 
         # validate the play and identify any captured positions
         for direction in range(8):
@@ -373,32 +385,32 @@ class OthelloEnv(gym.Env):
             flip_tokens = False
 
             if direction == 0:
-                flip_tokens, flip_seq = eval_cell(x_ind, y_ind + 1, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind, y_ind + 1, direction, player, flip_seq, flip_tokens)
 
             if direction == 1:
-                flip_tokens, flip_seq = eval_cell(x_ind + 1, y_ind + 1, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind + 1, y_ind + 1, direction, player, flip_seq, flip_tokens)
 
             if direction == 2:
-                flip_tokens, flip_seq = eval_cell(x_ind + 1, y_ind, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind + 1, y_ind, direction, player, flip_seq, flip_tokens)
 
             if direction == 3:
-                flip_tokens, flip_seq = eval_cell(x_ind + 1, y_ind - 1, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind + 1, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
             if direction == 4:
-                flip_tokens, flip_seq = eval_cell(x_ind, y_ind - 1, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
             if direction == 5:
-                flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind - 1, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind - 1, y_ind - 1, direction, player, flip_seq, flip_tokens)
 
             if direction == 6:
-                flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind - 1, y_ind, direction, player, flip_seq, flip_tokens)
 
             if direction == 7:
-                flip_tokens, flip_seq = eval_cell(x_ind - 1, y_ind + 1, direction, player, flip_seq, flip_tokens)
+                flip_tokens, flip_seq = self.eval_cell(x_ind - 1, y_ind + 1, direction, player, flip_seq, flip_tokens)
 
             # if there is a valid capture and the list of captured positions is > 0
             if flip_tokens and len(flip_seq) > 0:
-                print(direction, flip_seq)
+                # print(direction, flip_seq)
                 # flip all captured positions
                 for i in range(len(flip_seq)):
                     self.game_board[flip_seq[i][0], flip_seq[i][1]] = player['id']
@@ -408,9 +420,6 @@ class OthelloEnv(gym.Env):
     # place the token based on the mouse click position x, y this function will then execute all the logic of the game
     # change from play_token to step
     def step(self, action):
-
-
-
 
         # get board index from mouse click x, y pos
         def get_board_index(_x_pos, _y_pos):
@@ -431,7 +440,11 @@ class OthelloEnv(gym.Env):
 
             return x_index, y_index
 
-        # action as coordinates
+        # checks
+        assert len(action) == 1, "Invalid Action"
+        assert self.action_space.contains(action), "Invalid Action"
+        assert action in self.next_possible_actions, "Invalid Action"
+
 
         # get the board index from the mouse position
         x_ind, y_ind = get_board_index(_x_pos, _y_pos)
@@ -482,7 +495,7 @@ class OthelloEnv(gym.Env):
 
         return observations, reward, done, info
 
-    def exitprogram(self):
+    def exit_program(self):
         self.window.bye()
         sys.exit()
 
@@ -498,4 +511,4 @@ class OthelloEnv(gym.Env):
         close_msg.write("Press ESC again to exit", align="center", font=("Courier", 24, "bold"))
 
         self.window.listen()
-        self.window.onkeypress(self.exitprogram, "Escape")
+        self.window.onkeypress(self.exit_program, "Escape")
