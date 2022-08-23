@@ -229,7 +229,6 @@ class Othello():
         self.cross.forward(length)
         self.cross.backward(length * 2)
 
-
     # initialise gameboard
     def init_board(self, _poslist):
 
@@ -360,7 +359,7 @@ class Othello():
                 for i in range(len(directions)):
                     _x = x + directions[i][0]
                     _y = y + directions[i][1]
-                    if self.game_board[_x, _y] != 0: continue
+                    if (_x < 0 or _x > 7) or (_y < 0 or _y > 7) or self.game_board[_x, _y] != 0: continue
                     for j in range(len(directions)):
                         flip_tokens, flip_seq = self.eval_cell(_x + directions[j][0], _y + directions[j][1], j, player, flip_seq, flip_tokens)
                         if flip_tokens and len(flip_seq) > 0:
@@ -473,7 +472,7 @@ class Othello():
                 for i in range(len(flip_seq)):
                     self.game_board[flip_seq[i][0], flip_seq[i][1]] = player['id']
                     self.draw_token(flip_seq[i][0], flip_seq[i][1], player['colour'], self.playerposlist)
-                print(self.game_board)
+                # print(self.game_board)
 
     # place the token based on the mouse click position x, y
     # this function will then execute all the logic of the game
@@ -522,16 +521,8 @@ class Othello():
         else:
             next_player = black_player
 
-        # draw valid positions on board
+        # get all valid positions based on the next player and draw valid positions on board
         self.show_valid_board_pos(next_player)
-
-        # # get all valid positions based on the next player
-        # self.curr_valid_pos = self.get_valid_board_pos(next_player)
-        # # draw possible positions on board
-        # self.cross.clear()
-        # for pos in self.curr_valid_pos:
-        #     self.cross.setheading(0)
-        #     self.draw_cross(pos[0], pos[1], "NavyBlue", 3, 10, self.playerposlist)
 
         # display white and black score
         _score_white, _score_black = self.calculate_score(self.game_board)
