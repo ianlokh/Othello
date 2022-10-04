@@ -392,7 +392,7 @@ class OthelloEnv(gym.Env):
             adj_sum += abs(adj[i])
 
         # position must be either 0 or near an already placed token
-        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.player_valid_pos:
+        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0:
             valid_pos = True
         else:
             valid_pos = False
