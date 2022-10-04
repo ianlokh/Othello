@@ -1,139 +1,197 @@
-# This is a sample Python script.
-
-# Press ⌃R to execute it or replace it with your code.
-# Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
-
-# Importing stuff
-import turtle, sys
+import cProfile as profile
+import random
+import turtle
 from tkinter import *
 
-import numpy as np
 import gym
-from gym import error, spaces, utils
-from gym.utils import seeding
-
-import time
+import numpy as np
+from gym import spaces
 
 # Making the coordinate arrays
-gridpos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
-black_player = {"id":-1, "colour":"#000000", "label":"Player 1 (Black)", "score":0}
-white_player = {"id":1, "colour":"#FFFFFF", "label":"Player 2 (White)", "score":0}
-# black_player = [-1, "#000000", "Player 1 (Black)"]
-# white_player = [1, "#FFFFFF", "Player 2 (White)"]
+grid_pos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
+black_player = {"id": -1, "name": "black", "colour": "#000000", "label": "Player 1 (Black)", "score": 0}
+white_player = {"id": 1, "name": "white", "colour": "#FFFFFF", "label": "Player 2 (White)", "score": 0}
 directions = ((0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1))  # eight directions
-
 
 '''
 Othello game env
 '''
+
+
 class OthelloEnv(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    metadata = {'render_modes':['human']}
-
-    def __init__(self):
+    def __init__(self, render_mode=None):
         '''
         Initialises the key game variables
 
-        playerposlist - list of possible player positions based on grid size
+        player_pos_list - list of player positions based on grid size
         game_board - n x n board matrix
         curr_player - current player can be white_player or black_player
+        next_player - next player can be white_player or black_player
         token - Turtle graphics object to draw tokens
         instruction - Turtle graphics object for instruction text
         score - Turtle graphics object for score text
         window - Turtle graphics object to display game window and for GUI events
         '''
-        self.playerposlist = None
+
+        # global instance of turtles
+        self.outer = None
+        self.inner = None
+        self.grid = None
+        self.token = None
+        self.cross = None
+        self.instruction = None
+        self.score = None
+        self.window = None
+
+        self.player_pos_list = None
         self.game_board = None
+        self.winner = None
 
         # variable for player turn
         self.curr_player = None
+        self.next_player = None
 
-        # global instance of token turtle
-        self.token = turtle.Turtle()
-        self.token.ht()
-
-        # global instance of cross turtle
-        self.cross = turtle.Turtle()
-        self.cross.ht()
-
-        # global instance of instruction turtle
-        self.instruction = turtle.Turtle()
-        self.instruction.ht()
-
-        # global instance of score turtle
-        self.score = turtle.Turtle()
-        self.score.ht()
-
-        # Window Setup - needs to be here so that we can initialise the window, draw and initialise the game board,
-        # capture the mouse clicks using window.mainloop()
-        self.window = turtle.Screen()
-        self.window.bgcolor("#444444")
-
-        # a set of the possible coordinates (x, y) for the next player
-        self.next_possible_actions = set()
-        # a set of the possible positions for the current player
-        self.curr_valid_pos = set()
+        # a set of the possible positions for the player in turn
+        self.player_valid_pos = set()
 
         # if True, show a red plus sign in the grid where the player is allowed to put a piece
         self.show_next_possible_actions_hint = True
 
         # define action space
         self.action_space = spaces.Discrete(8 * 8)  # 8x8 possible positions
+        # a set of the possible coordinates (x, y) for the next player
         self.next_possible_actions = set()  # a set of the possible coordinates (row, col) for the next player
-        self.show_next_possible_actions_hint = True  # if True, show a red plus sign in the grid where the player is allowed to put a piece
+
+        # define observation space
+        self.observation_shape = (8, 8)  # it is a 8 row by 8 col grid
+        self.observation_space = spaces.Dict(
+            {
+                # the observation is a very large discrete space, and I do not want to use it
+                "state": spaces.Box(low=0, high=64, shape=(64,))
+                # "state": spaces.Discrete(8 * 8)
+            }
+        )
 
         self.STEP_LIMIT = 1000  # safe guard to ensure agent doesn't get stuck in a loop
         self.sleep = 0  # slow the rendering for human
 
-        # reset game environment
-        self.reset()
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        self.render_mode = render_mode
 
-    def reset(self):
+        """
+        If human-rendering is used, `self.window` will be a reference
+        to the window that we draw to. `self.clock` will be a clock that is used
+        to ensure that the environment is rendered at the correct framerate in
+        human-mode. They will remain `None` until human-mode is used for the
+        first time.
+        """
+        self.window = None
+
+        # # profiling
+        # self.prof = profile.Profile()
+
+    def _get_obs(self):
+        return {"state": self.game_board.flatten()}  # self.game_board
+
+    def _get_info(self):
+        return {"next_player": self.next_player, "next_possible_actions": self.next_possible_actions,
+                "winner": self.winner}
+
+    def _action_to_pos(self, action):
+        assert self.action_space.contains(action), "Invalid Action"
+        y_ind = action % 8
+        x_ind = (action // 8) % 8
+        return x_ind, y_ind
+
+    def _pos_to_action(self, x_ind, y_ind):
+        action = (x_ind * 8) + y_ind
+        assert self.action_space.contains(action), "Invalid Action"
+        return action
+
+    def render(self):
+        if self.render_mode == "rgb_array":
+            return self._render_frame()
+
+    def _render_frame(self):
+
+        if self.window is None and self.render_mode == "human":
+            self.outer = turtle.Turtle()
+            self.outer.speed(0)
+            self.outer.ht()
+
+            self.inner = turtle.Turtle()
+            self.inner.speed(0)
+            self.inner.ht()
+
+            self.grid = turtle.Turtle()
+            self.grid.speed(0)
+            self.grid.ht()
+
+            # global instance of token turtle
+            self.token = turtle.Turtle()
+            self.token.speed(0)
+            self.token.ht()
+
+            # global instance of cross turtle
+            self.cross = turtle.Turtle()
+            self.cross.speed(0)
+            self.cross.ht()
+
+            # global instance of instruction turtle
+            self.instruction = turtle.Turtle()
+            self.instruction.speed(0)
+            self.instruction.ht()
+
+            # global instance of score turtle
+            self.score = turtle.Turtle()
+            self.score.speed(0)
+            self.score.ht()
+
+            # Window Setup - needs to be here so that we can initialise the window, draw and initialise the game board,
+            # capture the mouse clicks using window.mainloop()
+            self.window = turtle.Screen()
+            self.window.bgcolor("#444444")
+            self.window.colormode(255)
+
+            # draw the game board once only
+            self.draw_board(grid_pos, self.outer, self.inner, self.grid)
+        else:
+            # clear existing turtles
+            self.token.clear()
+            self.cross.clear()
+            self.instruction.clear()
+            self.score.clear()
+
+        # initialise the board positions
+        self.init_board(self.player_pos_list)
+        # return the game_board grid
+        return self.game_board
+
+    def reset(self, seed=None, options=None):
         '''
         Resets the game, along with the default snake size and spawning food.
         '''
+        # We need the following line to seed self.np_random
+        super().reset(seed=seed)
+
         # initialise datastructure
-        self.playerposlist = self.generate_player_pos_list(gridpos)
-        self.game_board = np.zeros((len(self.playerposlist), len(self.playerposlist)))
+        self.player_pos_list = self.generate_player_pos_list(grid_pos)
+        self.game_board = np.zeros((len(self.player_pos_list), len(self.player_pos_list)))
 
-        # draw the game board
-        self.draw_board(gridpos)
-        # set the initial pieces
-        self.init_board(self.playerposlist)
+        if self.render_mode == "human":
+            self._render_frame()
 
-        # variable for player turn
-        self.curr_player = 0
+        # variable for player turn - black always starts first
+        self.curr_player = None
+        self.next_player = black_player
+        self.next_possible_actions = self.get_valid_board_pos(black_player)
 
-        return self.game_board
+        observation = self._get_obs()
+        info = self._get_info()
 
-    def play(self):
-        # each mouse click is to place the token
-        self.window.onscreenclick(self.play_token)
-        # listen for
-        self.window.listen()
-        self.window.onkeypress(self.close, "Escape")
-        self.window.mainloop()
-
-    @staticmethod
-    def alert_popup(title, message, path):
-        """Generate a pop-up window for special messages."""
-        root = Tk()
-        root.title(title)
-        w = 400  # popup window width
-        h = 200  # popup window height
-        sw = root.winfo_screenwidth()
-        sh = root.winfo_screenheight()
-        x = (sw - w) / 2
-        y = (sh - h) / 2
-        root.geometry('%dx%d+%d+%d' % (w, h, x, y))
-        m = message
-        m += '\n'
-        m += path
-        w = Label(root, text=m, width=120, height=10)
-        w.pack()
-        b = Button(root, text="OK", command=root.destroy, width=10)
-        b.pack()
-        mainloop()
+        return observation, info
 
     # We will draws a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
     # called playerposlist. The values in this will be 25 away from each value in gridpos, because our grid boxes are 50x50.
@@ -143,45 +201,29 @@ class OthelloEnv(gym.Env):
     # make sure that the center (i.e. where gridpos[i] == 0) translates into 2 positions of the playerposlist[i] and
     # playerposlist[i+1]
     @staticmethod
-    def generate_player_pos_list(_gridpos):
-        lst = [None] * (len(_gridpos) + 1)
-        for i in range(len(_gridpos)):
-            if _gridpos[i] < 0:
-                lst[i] = _gridpos[i] - 25
-            elif _gridpos[i] == 0:
-                lst[i] = _gridpos[i] - 25
-                lst[i + 1] = _gridpos[i] + 25  # to populate the additional position
-            elif gridpos[i] > 0:
-                lst[i + 1] = _gridpos[i] + 25  # henceforth the indexing on lst would be i+1
+    def generate_player_pos_list(_grid_pos):
+        lst = [None] * (len(_grid_pos) + 1)
+        for i in range(len(_grid_pos)):
+            if _grid_pos[i] < 0:
+                lst[i] = _grid_pos[i] - 25
+            elif _grid_pos[i] == 0:
+                lst[i] = _grid_pos[i] - 25
+                lst[i + 1] = _grid_pos[i] + 25  # to populate the additional position
+            elif grid_pos[i] > 0:
+                lst[i + 1] = _grid_pos[i] + 25  # henceforth the indexing on lst would be i+1
         return lst
 
     @staticmethod
-    def draw_board(_gridpos):
+    def draw_board(_grid_pos, outer, inner, grid):
         border = 10
 
-        grid_pos_x = max(_gridpos) + 50 + border
-        grid_pos_y = max(_gridpos) + 50 + border
+        grid_pos_x = max(_grid_pos) + 50 + border
+        grid_pos_y = max(_grid_pos) + 50 + border
         grid_length = grid_pos_x + grid_pos_x
 
-        # Set this int to a number between 0 and 10, inclusive, to change the speed. Usually, lower is slower, except in the
-        # case of 0, which is the fastest possible.
-        speed = 0
-        if speed < 0 or speed > 10:
-            raise Exception("Speed out of range! Please input a value between 0 and 10 (inclusive)")
-
-        # Initializing Turtles
-        outer = turtle.Turtle()
-        inner = turtle.Turtle()
-        grid = turtle.Turtle()
-
-        # Hiding the turtles
-        outer.ht()
-        inner.ht()
-        grid.ht()
-
         # Making the outer border of the game
-        outer.speed(speed)
-        outer.color("#000000", "#FFFFFF")
+        # outer.color("#000000", "#FFFFFF")
+        outer.color((255, 255, 255))
         outer.up()
         outer.goto(grid_pos_x, grid_pos_y)
         outer.down()
@@ -192,8 +234,8 @@ class OthelloEnv(gym.Env):
         outer.end_fill()
 
         # Making the inner border of the game
-        inner.speed(speed)
-        inner.color("#000000", "#358856")
+        # inner.color("#000000", "#358856")
+        inner.color((53, 136, 86))
         inner.up()
         inner.goto(grid_pos_x - border, grid_pos_y - border)
         inner.down()
@@ -204,34 +246,33 @@ class OthelloEnv(gym.Env):
         inner.end_fill()
 
         # Making the grid
-        grid.speed(speed)
-        grid.color("#000000")
-        for p in range(len(gridpos)):
+        grid.color((0, 0, 0))
+        for p in range(len(grid_pos)):
             grid.up()
-            grid.goto(-grid_pos_x + border, gridpos[p])
+            grid.goto(-grid_pos_x + border, grid_pos[p])
             grid.down()
             grid.fd(grid_length - (border * 2))
             grid.lt(90)
             grid.up()
-            grid.goto(gridpos[p], -grid_pos_y + border)
+            grid.goto(grid_pos[p], -grid_pos_y + border)
             grid.down()
             grid.fd(grid_length - (border * 2))
             grid.rt(90)
 
     # draw token
-    def draw_token(self, x_ind, y_ind, colour, _poslist):
+    def draw_token(self, x_ind, y_ind, colour, _pos_list):
         self.token.speed(0)
         self.token.up()
-        self.token.goto(_poslist[x_ind], _poslist[y_ind])
+        self.token.goto(_pos_list[x_ind], _pos_list[y_ind])
         self.token.dot(40, colour)
 
     # draw cross
-    def draw_cross(self, x_ind, y_ind, colour, width, length, _poslist):
+    def draw_cross(self, x_ind, y_ind, colour, width, length, _pos_list):
         self.cross.speed(0)
         self.cross.width(width)
         self.cross.color(colour)
         self.cross.penup()
-        self.cross.goto(_poslist[x_ind], _poslist[y_ind])
+        self.cross.goto(_pos_list[x_ind], _pos_list[y_ind])
         self.cross.pendown()
         self.cross.right(45)
         self.cross.forward(length)
@@ -242,11 +283,7 @@ class OthelloEnv(gym.Env):
         self.cross.backward(length * 2)
 
     # initialise gameboard
-    def init_board(self, _poslist):
-
-        # turn turtle animation on or off and set a delay for update drawings.
-        self.window.delay(0)
-        self.window.tracer(False)
+    def init_board(self, _pos_list):
 
         # set the game_board matrix
         self.game_board[3, 3] = black_player['id']
@@ -254,42 +291,44 @@ class OthelloEnv(gym.Env):
         self.game_board[3, 4] = white_player['id']
         self.game_board[4, 3] = white_player['id']
 
-        self.draw_token(3, 3, black_player['colour'], _poslist)
-        self.draw_token(4, 4, black_player['colour'], _poslist)
-        self.draw_token(3, 4, white_player['colour'], _poslist)
-        self.draw_token(4, 3, white_player['colour'], _poslist)
+        if self.render_mode == "human":
+            # turn turtle animation on or off and set a delay for update drawings.
+            self.window.delay(0)
+            self.window.tracer(0, 0)
 
-        # write for next player - first player always black
-        self.instruction.clear()
-        self.instruction.penup()
-        self.instruction.hideturtle()
-        self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
-        self.instruction.write(black_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
+            self.draw_token(3, 3, black_player['colour'], _pos_list)
+            self.draw_token(4, 4, black_player['colour'], _pos_list)
+            self.draw_token(3, 4, white_player['colour'], _pos_list)
+            self.draw_token(4, 3, white_player['colour'], _pos_list)
 
-        # draw valid positions on board
-        self.show_valid_board_pos(black_player)
+            # write for next player - first player always black
+            self.instruction.clear()
+            self.instruction.penup()
+            self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
+            self.instruction.write(black_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
-        # Perform a TurtleScreen update. To be used when tracer is turned off.
-        self.window.update()
-        self.window.tracer(True)
+            # draw valid positions on board
+            self.show_valid_board_pos(black_player)
+
+            # Perform a TurtleScreen update. To be used when tracer is turned off.
+            self.window.update()
+            # self.window.tracer(True)
 
     # get the next player
     def get_player(self):
-        if self.curr_player < 0:
-            self.curr_player = 1
-            return white_player
-        elif self.curr_player > 0:
-            self.curr_player = -1
-            return black_player
-        elif self.curr_player == 0:
-            self.curr_player = -1
-            return black_player
+        if self.curr_player == black_player:
+            self.curr_player = white_player
+        elif self.curr_player == white_player:
+            self.curr_player = black_player
+        elif self.curr_player is None:
+            self.curr_player = black_player
+        return self.curr_player
 
     # Function that returns all adjacent elements
     @staticmethod
     def get_adjacent(arr, i, j):
-        def is_valid_pos(i, j, n, m):
-            if i < 0 or j < 0 or i > n - 1 or j > m - 1:
+        def is_valid_pos(_i, _j, _n, _m):
+            if _i < 0 or _j < 0 or _i > _n - 1 or _j > _m - 1:
                 return 0
             return 1
 
@@ -353,7 +392,7 @@ class OthelloEnv(gym.Env):
             adj_sum += abs(adj[i])
 
         # position must be either 0 or near an already placed token
-        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.curr_valid_pos:
+        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.player_valid_pos:
             valid_pos = True
         else:
             valid_pos = False
@@ -373,19 +412,20 @@ class OthelloEnv(gym.Env):
                     _y = y + directions[i][1]
                     if (_x < 0 or _x > 7) or (_y < 0 or _y > 7) or self.game_board[_x, _y] != 0: continue
                     for j in range(len(directions)):
-                        flip_tokens, flip_seq = self.eval_cell(_x + directions[j][0], _y + directions[j][1], j, player, flip_seq, flip_tokens)
+                        flip_tokens, flip_seq = self.eval_cell(_x + directions[j][0], _y + directions[j][1], j, player,
+                                                               flip_seq, flip_tokens)
                         if flip_tokens and len(flip_seq) > 0:
                             valid_positions.append((_x, _y))
         return set(valid_positions)
 
     def show_valid_board_pos(self, player):
-        # get all valid positions based on the next player
-        self.curr_valid_pos = self.get_valid_board_pos(player)
+        # get all valid positions for the player
+        self.player_valid_pos = self.get_valid_board_pos(player)
         # draw possible positions on board
         self.cross.clear()
-        for pos in self.curr_valid_pos:
+        for pos in self.player_valid_pos:
             self.cross.setheading(0)
-            self.draw_cross(pos[0], pos[1], "NavyBlue", 3, 10, self.playerposlist)
+            self.draw_cross(pos[0], pos[1], "NavyBlue", 3, 10, self.player_pos_list)
 
     # check if the position has any tokens that can be flipped
     def eval_cell(self, x, y, _direction, _player, _flip_seq, _flip_tokens):
@@ -439,14 +479,14 @@ class OthelloEnv(gym.Env):
 
     # add position to game board
     def add_to_board(self, x_ind, y_ind, player):
-        # check that player is a valid player
-        assert player in (black_player, white_player), "illegal player input"
+        # count the number of flipped tokens
+        flipped_cnt = 0
 
-        # place the player on the board
+        # place the player on the game board
         self.game_board[x_ind, y_ind] = player['id']
 
         # draw the player's token on the screen
-        self.draw_token(x_ind, y_ind, player['colour'], self.playerposlist)
+        self.draw_token(x_ind, y_ind, player['colour'], self.player_pos_list)
 
         # validate the play and identify any captured positions
         for direction in range(8):
@@ -479,118 +519,152 @@ class OthelloEnv(gym.Env):
 
             # if there is a valid capture and the list of captured positions is > 0
             if flip_tokens and len(flip_seq) > 0:
-                # print(direction, flip_seq)
                 # flip all captured positions
+                flipped_cnt = len(flip_seq)
                 for i in range(len(flip_seq)):
                     self.game_board[flip_seq[i][0], flip_seq[i][1]] = player['id']
-                    self.draw_token(flip_seq[i][0], flip_seq[i][1], player['colour'], self.playerposlist)
-                print(self.game_board)
+                    self.draw_token(flip_seq[i][0], flip_seq[i][1], player['colour'], self.player_pos_list)
+                # print(self.game_board)
+
+        return flipped_cnt
 
     # place the token based on the mouse click position x, y this function will then execute all the logic of the game
     # change from play_token to step
     def step(self, action):
 
+        # self.prof.enable()
+
         # turn turtle animation on or off and set a delay for update drawings.
         self.window.delay(0)
-        self.window.tracer(False)
+        # self.window.tracer(False)
+        self.window.tracer(0, 0)
 
-        # get board index from mouse click x, y pos
-        def get_board_index(_x_pos, _y_pos):
-            # find the closest index for x, y coordinate
-            x_index = 0
-            curr_x_diff = 50  # set to 50 because it is the max distance from the mouse pos to the grid
-            y_index = 0
-            curr_y_diff = 50  # set to 50 because it is the max distance from the mouse pos to the grid
-            # find the closest index for x y coordinate
-            for i in range(len(self.playerposlist)):
-                if curr_x_diff > abs(self.playerposlist[i] - _x_pos):
-                    x_index = i
-                    curr_x_diff = abs(self.playerposlist[i] - _x_pos)
-
-                if curr_y_diff > abs(self.playerposlist[i] - _y_pos):
-                    y_index = i
-                    curr_y_diff = abs(self.playerposlist[i] - _y_pos)
-
-            return x_index, y_index
-
-        # checks
-        assert len(action) == 1, "Invalid Action"
-        assert self.action_space.contains(action), "Invalid Action"
-        assert action in self.next_possible_actions, "Invalid Action"
-
-
-        # get the board index from the mouse position
-        x_ind, y_ind = get_board_index(_x_pos, _y_pos)
-
-        # check that this is a valid position
-        if not self.check_board_pos(x_ind, y_ind):
-            self.alert_popup("Error", "You cannot place a token here", "")
-            return
-
+        # initialise step variables
+        reward = 0
+        done = False
         # get the current player - which is the next player based on the current state of the board
+        # and sets the internal variable curr_player
         player = self.get_player()
 
-        # add the token to the board
+        # get x, y index positions from action
+        assert self.action_space.contains(action), "Invalid Action"
+        x_ind, y_ind = self._action_to_pos(action)
+
+        # add the token to the board and get the number of tokens flipped as the reward
+        # change the reward to tune the training of the agents
+        assert (x_ind, y_ind) in self.next_possible_actions, "Invalid Next Action"
         self.add_to_board(x_ind, y_ind, player)
 
-        # get the next player
-        if self.curr_player == -1:
-            next_player = white_player
-        else:
-            next_player = black_player
+        # set the next_player variable
+        next_player = white_player if player == black_player else black_player
 
-        # get all valid positions based on the next player and draw valid positions on board
-        self.show_valid_board_pos(next_player)
+        # get list of possible actions (positions) for the next player
+        possible_actions = self.get_valid_board_pos(next_player)
+        # if there is no possible action for next player, then skip the next player and turn now reverts to current
+        # player
+        if not (len(possible_actions) > 0):
+            # back to current player's turn
+            curr_possible_actions = self.get_valid_board_pos(player)
+            # if even current player cannot place any position then game ends
+            if not (len(curr_possible_actions) > 0):
+                self.next_possible_actions = set()
+                self.next_player = None
+                done = True
+            else:  # if current player can place position then continue with current player as next player
+                reward += 0
+                self.next_possible_actions = curr_possible_actions
+                self.curr_player = next_player  # this is so that the get_player() is getting the correct player turn
+                self.next_player = player  # this is for the info object
+        else:  # else if there are possible actions for the next player then capture it
+            self.next_possible_actions = possible_actions
+            self.next_player = next_player
 
-        # display white and black score
+        # calculate players scores
         _score_white, _score_black = self.calculate_score(self.game_board)
-        self.score.clear()
-        self.score.hideturtle()
+        # assign scores to the player objects
+        white_player['score'] = _score_white
+        black_player['score'] = _score_black
 
+        self.score.clear()
         self.score.penup()
-        self.score.goto(0, -(self.window.window_height() / 2) + 700)
-        self.score.write(white_player['label'] + " score:" + str(_score_white), align="center",
+        # self.score.goto(0, -(self.window.window_height() / 2) + 700)
+        self.score.goto(0, (self.window.window_height() / 2) - 100)
+        self.score.write(white_player['label'] + " score:" + str(white_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
         self.score.penup()
-        self.score.goto(0, -(self.window.window_height() / 2) + 670)
-        self.score.write(black_player['label'] + " score:" + str(_score_black), align="center",
+        # self.score.goto(0, -(self.window.window_height() / 2) + 670)
+        self.score.goto(0, (self.window.window_height() / 2) - 130)
+        self.score.write(black_player['label'] + " score:" + str(black_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
         # check if there are still positions to play else end the game
-        if (_score_white + _score_black) == (len(gridpos) + 1) * (len(gridpos) + 1):
-            self.window.bye()
+        if done:
+            self.instruction.clear()
         else:
             # write instructions for next player
             self.instruction.clear()
             self.instruction.penup()
-            self.instruction.hideturtle()
             self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
             self.instruction.write(next_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
         # Perform a TurtleScreen update. To be used when tracer is turned off.
         self.window.update()
-        self.window.tracer(True)
+        # self.window.tracer(True)
+
+        if done:
+            conclusion = "Game Over! "
+            if _score_black == _score_white:  # Tie
+                reward += 2
+                self.winner = "Tie"
+                conclusion += "No winner, ends up a Tie"
+            elif _score_black > _score_white:
+                self.winner = "Black"
+                reward += 10 if player == black_player else -10
+                conclusion += "Winner is Black."
+            else:
+                self.winner = "White"
+                reward += 10 if player == white_player else -10
+                conclusion += "Winner is White."
+
+            print(conclusion)
 
         # return game board as observations
-        observations = self.game_board
+        observation = self._get_obs()
+        # return game information
+        info = self._get_info()
 
-        return observations, reward, done, info
+        # self.prof.disable()
 
-    def exit_program(self):
-        self.window.bye()
-        sys.exit()
+        # additional parameter truncated is always FALSE
+        return observation, reward, done, FALSE, info
+
+    # get random action from list of possible actions (use to train agent)
+    def get_random_action(self):
+        if self.next_possible_actions:
+            return random.choice(list(self.next_possible_actions))
+        return ()
 
     def close(self):
-        self.score.clear()
+        self.outer.clear()
+        self.outer.reset()
+
+        self.inner.clear()
+        self.inner.reset()
+
+        self.grid.clear()
+        self.grid.reset()
+
+        self.token.clear()
+        self.token.reset()
+
+        self.cross.clear()
+        self.cross.reset()
+
         self.instruction.clear()
+        self.instruction.reset()
 
-        close_msg = turtle.Turtle()
-        close_msg.speed(0)
-        close_msg.penup()
-        close_msg.hideturtle()
-        close_msg.goto(0, (self.window.window_height() / 2) - 100)
-        close_msg.write("Press ESC again to exit", align="center", font=("Courier", 24, "bold"))
+        self.score.clear()
+        self.score.reset()
 
-        self.window.listen()
-        self.window.onkeypress(self.exit_program, "Escape")
+        self.window.bye()

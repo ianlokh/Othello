@@ -11,11 +11,9 @@ import numpy as np
 import time
 
 # Making the coordinate arrays
-gridpos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
-black_player = {"id": -1, "colour": "#000000", "label": "Player 1 (Black)"}
-white_player = {"id": 1, "colour": "#FFFFFF", "label": "Player 2 (White)"}
-# black_player = [-1, "#000000", "Player 1 (Black)"]
-# white_player = [1, "#FFFFFF", "Player 2 (White)"]
+grid_pos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
+black_player = {"id": -1, "colour": "#000000", "label": "Player 1 (Black)", "score": 0}
+white_player = {"id": 1, "colour": "#FFFFFF", "label": "Player 2 (White)", "score": 0}
 directions = ((0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1))  # eight directions
 
 
@@ -30,7 +28,7 @@ class Othello():
         '''
         Initialises the key game variables
 
-        playerposlist - list of possible player positions based on grid size
+        player_pos_list - list of possible player positions based on grid size
         game_board - n x n board matrix
         curr_player - current player can be white_player or black_player
         token - Turtle graphics object to draw tokens
@@ -38,7 +36,7 @@ class Othello():
         score - Turtle graphics object for score text
         window - Turtle graphics object to display game window and for GUI events
         '''
-        self.playerposlist = None
+        self.player_pos_list = None
         self.game_board = None
 
         # variable for player turn
@@ -67,8 +65,8 @@ class Othello():
 
         # a set of the possible coordinates (x, y) for the next player
         self.next_possible_actions = set()
-        # a set of the possible positions for the current player
-        self.curr_valid_pos = set()
+        # a set of the possible positions for the player in turn
+        self.player_valid_pos = set()
 
         # if True, show a red plus sign in the grid where the player is allowed to put a piece
         self.show_next_possible_actions_hint = True
@@ -78,19 +76,19 @@ class Othello():
 
     def reset(self):
         '''
-        Resets the game, along with the default snake size and spawning food.
+        Resets the game
         '''
         # initialise datastructure
-        self.playerposlist = self.generate_player_pos_list(gridpos)
-        self.game_board = np.zeros((len(self.playerposlist), len(self.playerposlist)))
+        self.player_pos_list = self.generate_player_pos_list(grid_pos)
+        self.game_board = np.zeros((len(self.player_pos_list), len(self.player_pos_list)))
 
         # draw the game board
-        self.draw_board(gridpos)
+        self.draw_board(grid_pos)
         # set the initial pieces
-        self.init_board(self.playerposlist)
+        self.init_board(self.player_pos_list)
 
-        # variable for player turn
-        self.curr_player = 0
+        # variable for player turn - black always starts first
+        self.curr_player = None
 
         print("Game Reset.")
 
@@ -123,32 +121,32 @@ class Othello():
         b.pack()
         mainloop()
 
-    # We will draws a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
-    # called playerposlist. The values in this will be 25 away from each value in gridpos, because our grid boxes are 50x50.
+    # We will draw a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
+    # called player_pos_list. The values in this will be 25 away from each value in grid_pos, because our grid boxes are 50x50.
     # So, we'll start at -225, then -175, -125, etc.
-    # Note that because the gridpos are actually position of the lines, therefore the number of boxes will be 1 + no of
-    # lines thus the playerposlist should be = 1+len(gridpos).  When we populate this array of positions, we need to then
-    # make sure that the center (i.e. where gridpos[i] == 0) translates into 2 positions of the playerposlist[i] and
-    # playerposlist[i+1]
+    # Note that because the grid_pos are actually position of the lines, therefore the number of boxes will be 1 + no of
+    # lines thus the player_pos_list should be = 1+len(grid_pos).  When we populate this array of positions, we need to then
+    # make sure that the center (i.e. where grid_pos[i] == 0) translates into 2 positions of the player_pos_list[i] and
+    # player_pos_list[i+1]
     @staticmethod
-    def generate_player_pos_list(_gridpos):
-        lst = [None] * (len(_gridpos) + 1)
-        for i in range(len(_gridpos)):
-            if _gridpos[i] < 0:
-                lst[i] = _gridpos[i] - 25
-            elif _gridpos[i] == 0:
-                lst[i] = _gridpos[i] - 25
-                lst[i + 1] = _gridpos[i] + 25  # to populate the additional position
-            elif gridpos[i] > 0:
-                lst[i + 1] = _gridpos[i] + 25  # henceforth the indexing on lst would be i+1
+    def generate_player_pos_list(_grid_pos):
+        lst = [None] * (len(_grid_pos) + 1)
+        for i in range(len(_grid_pos)):
+            if _grid_pos[i] < 0:
+                lst[i] = _grid_pos[i] - 25
+            elif _grid_pos[i] == 0:
+                lst[i] = _grid_pos[i] - 25
+                lst[i + 1] = _grid_pos[i] + 25  # to populate the additional position
+            elif grid_pos[i] > 0:
+                lst[i + 1] = _grid_pos[i] + 25  # henceforth the indexing on lst would be i+1
         return lst
 
     @staticmethod
-    def draw_board(_gridpos):
+    def draw_board(_grid_pos):
         border = 10
 
-        grid_pos_x = max(_gridpos) + 50 + border
-        grid_pos_y = max(_gridpos) + 50 + border
+        grid_pos_x = max(_grid_pos) + 50 + border
+        grid_pos_y = max(_grid_pos) + 50 + border
         grid_length = grid_pos_x + grid_pos_x
 
         # Set this int to a number between 0 and 10, inclusive, to change the speed. Usually, lower is slower, except in the
@@ -194,32 +192,32 @@ class Othello():
         # Making the grid
         grid.speed(speed)
         grid.color("#000000")
-        for p in range(len(gridpos)):
+        for p in range(len(grid_pos)):
             grid.up()
-            grid.goto(-grid_pos_x + border, gridpos[p])
+            grid.goto(-grid_pos_x + border, grid_pos[p])
             grid.down()
             grid.fd(grid_length - (border * 2))
             grid.lt(90)
             grid.up()
-            grid.goto(gridpos[p], -grid_pos_y + border)
+            grid.goto(grid_pos[p], -grid_pos_y + border)
             grid.down()
             grid.fd(grid_length - (border * 2))
             grid.rt(90)
 
     # draw token
-    def draw_token(self, x_ind, y_ind, colour, _poslist):
+    def draw_token(self, x_ind, y_ind, colour, _pos_list):
         self.token.speed(0)
         self.token.up()
-        self.token.goto(_poslist[x_ind], _poslist[y_ind])
+        self.token.goto(_pos_list[x_ind], _pos_list[y_ind])
         self.token.dot(40, colour)
 
     # draw cross
-    def draw_cross(self, x_ind, y_ind, colour, width, length, _poslist):
+    def draw_cross(self, x_ind, y_ind, colour, width, length, _pos_list):
         self.cross.speed(0)
         self.cross.width(width)
         self.cross.color(colour)
         self.cross.penup()
-        self.cross.goto(_poslist[x_ind], _poslist[y_ind])
+        self.cross.goto(_pos_list[x_ind], _pos_list[y_ind])
         self.cross.pendown()
         self.cross.right(45)
         self.cross.forward(length)
@@ -229,8 +227,8 @@ class Othello():
         self.cross.forward(length)
         self.cross.backward(length * 2)
 
-    # initialise gameboard
-    def init_board(self, _poslist):
+    # initialise game_board
+    def init_board(self, _pos_list):
 
         # turn turtle animation on or off and set a delay for update drawings.
         self.window.delay(0)
@@ -242,10 +240,10 @@ class Othello():
         self.game_board[3, 4] = white_player['id']
         self.game_board[4, 3] = white_player['id']
 
-        self.draw_token(3, 3, black_player['colour'], _poslist)
-        self.draw_token(4, 4, black_player['colour'], _poslist)
-        self.draw_token(3, 4, white_player['colour'], _poslist)
-        self.draw_token(4, 3, white_player['colour'], _poslist)
+        self.draw_token(3, 3, black_player['colour'], _pos_list)
+        self.draw_token(4, 4, black_player['colour'], _pos_list)
+        self.draw_token(3, 4, white_player['colour'], _pos_list)
+        self.draw_token(4, 3, white_player['colour'], _pos_list)
 
         # write for next player - first player always black
         self.instruction.clear()
@@ -263,21 +261,20 @@ class Othello():
 
     # get the next player
     def get_player(self):
-        if self.curr_player < 0:
-            self.curr_player = 1
-            return white_player
-        elif self.curr_player > 0:
-            self.curr_player = -1
-            return black_player
-        elif self.curr_player == 0:
-            self.curr_player = -1
-            return black_player
+        if self.curr_player == black_player:
+            self.curr_player = white_player
+        elif self.curr_player == white_player:
+            self.curr_player = black_player
+        elif self.curr_player is None:
+            self.curr_player = black_player
+        return self.curr_player
 
     # Function that returns all adjacent elements
     @staticmethod
     def get_adjacent(arr, i, j):
-        def is_valid_pos(i, j, n, m):
-            if i < 0 or j < 0 or i > n - 1 or j > m - 1:
+
+        def is_valid_pos(_i, _j, _n, _m):
+            if _i < 0 or _j < 0 or _i > _n - 1 or _j > _m - 1:
                 return 0
             return 1
 
@@ -341,7 +338,7 @@ class Othello():
             adj_sum += abs(adj[i])
 
         # position must be either 0 or near an already placed token
-        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.curr_valid_pos:
+        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.player_valid_pos:
             valid_pos = True
         else:
             valid_pos = False
@@ -368,12 +365,12 @@ class Othello():
 
     def show_valid_board_pos(self, player):
         # get all valid positions based on the next player
-        self.curr_valid_pos = self.get_valid_board_pos(player)
+        self.player_valid_pos = self.get_valid_board_pos(player)
         # draw possible positions on board
         self.cross.clear()
-        for pos in self.curr_valid_pos:
+        for pos in self.player_valid_pos:
             self.cross.setheading(0)
-            self.draw_cross(pos[0], pos[1], "NavyBlue", 3, 10, self.playerposlist)
+            self.draw_cross(pos[0], pos[1], "NavyBlue", 3, 10, self.player_pos_list)
 
     # check if the position has any tokens that can be flipped
     def eval_cell(self, x, y, _direction, _player, _flip_seq, _flip_tokens):
@@ -434,7 +431,7 @@ class Othello():
         self.game_board[x_ind, y_ind] = player['id']
 
         # draw the player's token on the screen
-        self.draw_token(x_ind, y_ind, player['colour'], self.playerposlist)
+        self.draw_token(x_ind, y_ind, player['colour'], self.player_pos_list)
 
         # validate the play and identify any captured positions
         for direction in range(8):
@@ -471,16 +468,12 @@ class Othello():
                 # flip all captured positions
                 for i in range(len(flip_seq)):
                     self.game_board[flip_seq[i][0], flip_seq[i][1]] = player['id']
-                    self.draw_token(flip_seq[i][0], flip_seq[i][1], player['colour'], self.playerposlist)
+                    self.draw_token(flip_seq[i][0], flip_seq[i][1], player['colour'], self.player_pos_list)
                 # print(self.game_board)
 
     # place the token based on the mouse click position x, y
     # this function will then execute all the logic of the game
     def play_token(self, _x_pos, _y_pos):
-
-        # turn turtle animation on or off and set a delay for update drawings.
-        self.window.delay(0)
-        self.window.tracer(False)
 
         # get board index from mouse click x, y pos
         def get_board_index(_x_pos, _y_pos):
@@ -490,16 +483,20 @@ class Othello():
             y_index = 0
             curr_y_diff = 50  # set to 50 because it is the max distance from the mouse pos to the grid
             # find the closest index for x y coordinate
-            for i in range(len(self.playerposlist)):
-                if curr_x_diff > abs(self.playerposlist[i] - _x_pos):
+            for i in range(len(self.player_pos_list)):
+                if curr_x_diff > abs(self.player_pos_list[i] - _x_pos):
                     x_index = i
-                    curr_x_diff = abs(self.playerposlist[i] - _x_pos)
+                    curr_x_diff = abs(self.player_pos_list[i] - _x_pos)
 
-                if curr_y_diff > abs(self.playerposlist[i] - _y_pos):
+                if curr_y_diff > abs(self.player_pos_list[i] - _y_pos):
                     y_index = i
-                    curr_y_diff = abs(self.playerposlist[i] - _y_pos)
+                    curr_y_diff = abs(self.player_pos_list[i] - _y_pos)
 
             return x_index, y_index
+
+        # turn turtle animation on or off and set a delay for update drawings.
+        self.window.delay(0)
+        self.window.tracer(False)
 
         # get the board index from the mouse position
         x_ind, y_ind = get_board_index(_x_pos, _y_pos)
@@ -516,31 +513,33 @@ class Othello():
         self.add_to_board(x_ind, y_ind, player)
 
         # get the next player
-        if self.curr_player == -1:
-            next_player = white_player
-        else:
-            next_player = black_player
+        next_player = white_player if player == black_player else black_player
 
         # get all valid positions based on the next player and draw valid positions on board
         self.show_valid_board_pos(next_player)
 
-        # display white and black score
+        # calculate white and black score
         _score_white, _score_black = self.calculate_score(self.game_board)
+        # assign scores to the player objects
+        white_player['score'] = _score_white
+        black_player['score'] = _score_black
+
         self.score.clear()
         self.score.hideturtle()
 
         self.score.penup()
         self.score.goto(0, -(self.window.window_height() / 2) + 700)
-        self.score.write(white_player['label'] + " score:" + str(_score_white), align="center",
+        self.score.write(white_player['label'] + " score:" + str(white_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
         self.score.penup()
         self.score.goto(0, -(self.window.window_height() / 2) + 670)
-        self.score.write(black_player['label'] + " score:" + str(_score_black), align="center",
+        self.score.write(black_player['label'] + " score:" + str(black_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
         # check if there are still positions to play else end the game
-        if (_score_white + _score_black) == (len(gridpos) + 1) * (len(gridpos) + 1):
+        # if (_score_white + _score_black) == (len(grid_pos) + 1) * (len(grid_pos) + 1):
+        if len(self.get_valid_board_pos(next_player)) == 0:
             self.window.bye()
         else:
             # write instructions for next player
@@ -550,9 +549,9 @@ class Othello():
             self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
             self.instruction.write(next_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
-        # Perform a TurtleScreen update. To be used when tracer is turned off.
-        self.window.update()
-        self.window.tracer(True)
+            # Perform a TurtleScreen update. To be used when tracer is turned off.
+            self.window.update()
+            self.window.tracer(True)
 
     def exit_program(self):
         self.window.bye()
