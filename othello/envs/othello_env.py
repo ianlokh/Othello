@@ -312,7 +312,6 @@ class OthelloEnv(gym.Env):
 
             # Perform a TurtleScreen update. To be used when tracer is turned off.
             self.window.update()
-            # self.window.tracer(True)
 
     # get the next player
     def get_player(self):
@@ -536,7 +535,6 @@ class OthelloEnv(gym.Env):
 
         # turn turtle animation on or off and set a delay for update drawings.
         self.window.delay(0)
-        # self.window.tracer(False)
         self.window.tracer(0, 0)
 
         # initialise step variables
@@ -610,7 +608,6 @@ class OthelloEnv(gym.Env):
 
         # Perform a TurtleScreen update. To be used when tracer is turned off.
         self.window.update()
-        # self.window.tracer(True)
 
         if done:
             conclusion = "Game Over! "
