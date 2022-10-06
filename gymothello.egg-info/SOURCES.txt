@@ -1,0 +1,11 @@
+README.md
+setup.py
+gymothello.egg-info/PKG-INFO
+gymothello.egg-info/SOURCES.txt
+gymothello.egg-info/dependency_links.txt
+gymothello.egg-info/requires.txt
+gymothello.egg-info/top_level.txt
+othello/__init__.py
+othello/othello_agent.py
+othello/envs/__init__.py
+othello/envs/othello_env.py
