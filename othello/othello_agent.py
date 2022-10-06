@@ -51,6 +51,11 @@ class OthelloDQN:
         # self.prof = profile.Profile()
 
     def build_model(self, nb_observations):
+        """
+        build DQN model
+        :param nb_observations: no. of observations from the game board
+        :return: DQN model
+        """
         _model = tf.keras.Sequential([
             tf.keras.layers.Dense(32, input_shape=(1, nb_observations), activation="relu"),
             tf.keras.layers.Dense(32, activation="relu"),
@@ -78,10 +83,10 @@ class OthelloDQN:
 
         return _model
 
-    # store the experience
     # @profile(stream=fp)
     def store_transition(self, observation, action, reward, done, next_observation):
         """
+        stores the experience into a deque object. for white player only as we wil be training the white player
         :param next_observation:
         :param done:
         :param reward:
@@ -91,14 +96,13 @@ class OthelloDQN:
         """
         if self.player == "white":
             self.replay_buffer.append((observation, action, reward, next_observation, done))
-        elif self.player == "black":  # black doesnt need to learn so no need to store
+        elif self.player == "black":  # black doesn't need to learn so no need to store
             pass
 
     # @profile(stream=fp)
     def choose_action(self, observation, possible_actions):
         """
         This is an implementation of epsilon_greedy_action_selection to balance between exploitation and exploration
-
         :param observation: list[list], shape=[8, 8]
         :param possible_actions: a set of tuples (row, col)
         :return: a tuple of (row, col)
@@ -138,6 +142,11 @@ class OthelloDQN:
     # sync between mode and target_model
     # @profile(stream=fp)
     def __tgt_evl_sync(self):
+        """
+        copies the weights from model_eval (Q network) to model_target (Target network). partial copy the weights from
+        eval net to target net, alpha2 updates while (1-alpha2) remains
+        :return:
+        """
         if self.player == "white":
             # self.model_target.set_weights(self.model_eval.get_weights())
             # self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha1))
@@ -153,9 +162,12 @@ class OthelloDQN:
         elif self.player == "black":
             pass
 
-    # model training
     # @profile(stream=fp)
     def learn(self):
+        """
+        trains the DQN model for white player only. model_eval and model_target are synced before training
+        :return:
+        """
         if self.player == "white":  # only white player learns
             if len(self.replay_buffer) < self.batch_size:
                 return
@@ -217,7 +229,6 @@ class OthelloDQN:
         :param reward: float
         :return:
         """
-
         def modify_tuple(tup, idx, new_value):
             return tup[:idx] + (new_value,) + tup[idx + 1:]
 
@@ -237,10 +248,18 @@ class OthelloDQN:
             print('Update weights from another agent')
 
     def save_model(self, name="OthelloDQN"):
+        """
+        saves weights and model
+        :return:
+        """
         self.model_eval.save_weights("./models/{0}_{1}.{2}".format(name, "weights", "h5f"), overwrite=True)
         self.model_eval.save("./models/{0}_{1}.{2}".format(name, "model", "h5"))
 
     def load_model(self, name="OthelloDQN", load_type="weights"):
+        """
+        loads weights and model
+        :return:
+        """
         if not os.path.exists("./models/"):
             sys.exit("cannot load %s" % name)
         if load_type == "model":

@@ -230,12 +230,12 @@ class OthelloEnv(gym.Env):
         return observation, info
 
     # We will draw a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
-    # called playerposlist. The values in this will be 25 away from each value in gridpos, because our grid boxes are 50x50.
+    # called player_pos_list. The values in this will be 25 away from each value in grid_pos, because our grid boxes are 50x50.
     # So, we'll start at -225, then -175, -125, etc.
-    # Note that because the gridpos are actually position of the lines, therefore the number of boxes will be 1 + no of
-    # lines thus the playerposlist should be = 1+len(gridpos).  When we populate this array of positions, we need to then
-    # make sure that the center (i.e. where gridpos[i] == 0) translates into 2 positions of the playerposlist[i] and
-    # playerposlist[i+1]
+    # Note that because the grid_pos are actually position of the lines, therefore the number of boxes will be 1 + no of
+    # lines thus the player_pos_list should be = 1+len(grid_pos).  When we populate this array of positions, we need to then
+    # make sure that the center (i.e. where grid_pos[i] == 0) translates into 2 positions of the player_pos_list[i] and
+    # player_pos_list[i+1]
     @staticmethod
     def generate_player_pos_list(_grid_pos):
         """
@@ -348,7 +348,7 @@ class OthelloEnv(gym.Env):
         self.cross.forward(length)
         self.cross.backward(length * 2)
 
-    # initialise gameboard
+    # initialise game_board
     def init_board(self, _pos_list):
         """
         initialise the game board with starting positions
@@ -761,7 +761,6 @@ class OthelloEnv(gym.Env):
 
         # additional parameter truncated is always FALSE
         return observation, reward, done, FALSE, info
-
 
     def get_random_action(self):
         """
