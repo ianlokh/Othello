@@ -5,17 +5,17 @@ from collections import deque
 
 import numpy as np
 import tensorflow as tf
-
 from scipy.special import softmax
 
-from memory_profiler import profile
-import requests
+# for performance profiling
 # import cProfile as profile
-fp = open("report.log", "w+")
+from memory_profiler import profile
+fp = open("report-agent.log", "w+")  # to capture memory profile logs
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-class OthelloDQN():
+
+class OthelloDQN:
     def __init__(self, nb_observations, player="white"):
         self.player = player
 
@@ -24,24 +24,30 @@ class OthelloDQN():
 
         self.gamma = 0.95  # reward decay rate
         self.alpha1 = 0.1  # soft copy weights from white to black, alpha1 updates while (1-alpha1) remains
-        self.alpha2 = 0.1  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
-        self.learning_rate = 0.001
-        self.batch_size = 256
+        self.alpha2 = 0.2  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
         self.epsilon_reduce = 0.9995
         self.epsilon = 1.0
 
+        # q network learning parameters
+        self.learning_rate = 0.001
+        self.batch_size = 256
+        self.training_epochs = 15
+
         # total learning step
         self.learn_step_counter = 0  # count how many times the eval net has been updated, used to set a basis for updating the target net
-        self.replace_target_iter = 50
+        self.replace_target_iter = 100
 
-        self.replay_buffer = deque(maxlen=20000)
+        # replay buffer
+        self.replay_buffer_size = 20000
+        self.replay_buffer = deque(maxlen=self.replay_buffer_size)
 
+        # define the q network
         self.model_eval = self.build_model(nb_observations)  # this is the q network
 
         if self.player == "white":  # only while player learns
             self.model_target = self.build_model(nb_observations)  # this is the target network
 
-        # profiling
+        # performance profiling
         # self.prof = profile.Profile()
 
     def build_model(self, nb_observations):
@@ -68,12 +74,12 @@ class OthelloDQN():
         # Model is the full model w/o custom layers
         _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
                        loss=tf.keras.losses.MeanSquaredError(),
-                       metrics=['accuracy', 'cosine_similarity'])
+                       metrics=['accuracy'])
 
         return _model
 
     # store the experience
-    # @profile(stream = fp)
+    # @profile(stream=fp)
     def store_transition(self, observation, action, reward, done, next_observation):
         """
         :param next_observation:
@@ -88,7 +94,7 @@ class OthelloDQN():
         elif self.player == "black":  # black doesnt need to learn so no need to store
             pass
 
-    # @profile(stream = fp)
+    # @profile(stream=fp)
     def choose_action(self, observation, possible_actions):
         """
         This is an implementation of epsilon_greedy_action_selection to balance between exploitation and exploration
@@ -97,6 +103,7 @@ class OthelloDQN():
         :param possible_actions: a set of tuples (row, col)
         :return: a tuple of (row, col)
         """
+        # performance profiling
         # self.prof.enable()
 
         # set the mask
@@ -118,24 +125,36 @@ class OthelloDQN():
             # action = int(tf.keras.backend.eval(action))
             action = np.argmax(prediction[0], axis=1).item()
 
-            print("Epsilon:", '%.4f' % self.epsilon, "Agent play:", action)
+            # print("Epsilon:", '%.4f' % self.epsilon, "Agent play:", action)
 
         else:
             action = random.choice(list(possible_actions))
             action = (action[0] * 8) + action[1]
 
+        # performance profiling
         # self.prof.disable()
         return action
 
     # sync between mode and target_model
+    # @profile(stream=fp)
     def __tgt_evl_sync(self):
         if self.player == "white":
-            self.model_target.set_weights(self.model_eval.get_weights())
+            # self.model_target.set_weights(self.model_eval.get_weights())
+            # self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha1))
+            for model_layer, target_layer in zip(self.model_eval.layers, self.model_target.layers):
+                if model_layer.name == "dense":
+                    # same as layer.set_weights([weights_array, bias_array])
+                    target_layer.set_weights([np.multiply(model_layer.get_weights()[0], self.alpha2) +
+                                              np.multiply(target_layer.get_weights()[0], (1 - self.alpha2)),
+                                              np.multiply(model_layer.get_weights()[1], self.alpha2) +
+                                              np.multiply(model_layer.get_weights()[1], (1 - self.alpha2))])
+
             print('\nUpdate target_model weights\n')
         elif self.player == "black":
             pass
 
     # model training
+    # @profile(stream=fp)
     def learn(self):
         if self.player == "white":  # only white player learns
             if len(self.replay_buffer) < self.batch_size:
@@ -159,7 +178,6 @@ class OthelloDQN():
             for i in range(self.batch_size):
                 q_value = max(q_values[i][0])
                 target = targets[i].copy()
-
                 # print("before count:", i, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
                 # input("press to continue")
                 if dones[i]:
@@ -173,7 +191,16 @@ class OthelloDQN():
                 target_batch.append(target)
 
             # train network
-            history = self.model_eval.fit(np.array(states), np.array(target_batch), epochs=15, verbose=0)
+            history = self.model_eval.fit(np.array(states), np.array(target_batch), epochs=self.training_epochs,
+                                          verbose=0)
+            if history is None:
+                pass
+            else:
+                print("\nReplay Buffer:", len(self.replay_buffer),
+                      "Learn Step Cnt:", self.learn_step_counter,
+                      "Avg. Loss:", '%.4f' % np.mean([round(elem, 4) for elem in history.history['loss']]),
+                      "Avg. Accuracy:", '%.4f' % np.mean([round(elem, 4) for elem in history.history['accuracy']]),
+                      "\n")
 
             # increment the learning step counter
             self.learn_step_counter += 1
@@ -181,14 +208,16 @@ class OthelloDQN():
             # update the epsilon for epsilon greedy exploration / exploitation
             self.epsilon *= self.epsilon_reduce  # eps * 0.995
 
-            return history
+            return
 
+    # @profile(stream=fp)
     def reward_transition_update(self, reward: float):
         """
         if it is the Black that take the last turn, the reward the white player obtained should be updated because the winner has been determined
         :param reward: float
         :return:
         """
+
         def modify_tuple(tup, idx, new_value):
             return tup[:idx] + (new_value,) + tup[idx + 1:]
 
@@ -199,7 +228,7 @@ class OthelloDQN():
 
     def weights_assign(self, another: 'OthelloDQN'):
         """
-        accept weights of the brain_eval from the white player
+        accept training weights from the white player
         :param another:
         :return:
         """

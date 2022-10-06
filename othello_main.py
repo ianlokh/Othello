@@ -25,43 +25,35 @@ Othello game class
 class Othello():
 
     def __init__(self):
-        '''
+        """
         Initialises the key game variables
 
-        player_pos_list - list of possible player positions based on grid size
+        player_pos_list - list of player positions based on grid size
         game_board - n x n board matrix
         curr_player - current player can be white_player or black_player
+        next_player - next player can be white_player or black_player
         token - Turtle graphics object to draw tokens
         instruction - Turtle graphics object for instruction text
         score - Turtle graphics object for score text
         window - Turtle graphics object to display game window and for GUI events
-        '''
+        """
+        # global instance of turtles
+        self.outer = None
+        self.inner = None
+        self.grid = None
+        self.token = None
+        self.cross = None
+        self.instruction = None
+        self.score = None
+        self.window = None
+
         self.player_pos_list = None
         self.game_board = None
+        self.winner = None
 
         # variable for player turn
         self.curr_player = None
-
-        # global instance of token turtle
-        self.token = turtle.Turtle()
-        self.token.ht()
-
-        # global instance of cross turtle
-        self.cross = turtle.Turtle()
-        self.cross.ht()
-
-        # global instance of instruction turtle
-        self.instruction = turtle.Turtle()
-        self.instruction.ht()
-
-        # global instance of score turtle
-        self.score = turtle.Turtle()
-        self.score.ht()
-
-        # Window Setup - needs to be here so that we can initialise the window, draw and initialise the game board,
-        # capture the mouse clicks using window.mainloop()
-        self.window = turtle.Screen()
-        self.window.bgcolor("#444444")
+        self.next_player = None
 
         # a set of the possible coordinates (x, y) for the next player
         self.next_possible_actions = set()
@@ -74,25 +66,97 @@ class Othello():
         # reset game environment
         self.reset()
 
-    def reset(self):
-        '''
-        Resets the game
-        '''
+    def render(self):
+        """
+        method override from gym class for rendering the game environment
+        :return: _render_frame()
+        """
+        return self._render_frame()
+
+    def _render_frame(self):
+        """
+        if render_mode is human, initialise the turtle objects for rendering and draw game board. Regardless of
+        modes, always initialise the board
+        :return: 1d array of positions on game board, this is the same as initial observations of the environment
+        """
+        if self.window is None:
+            self.outer = turtle.Turtle()
+            self.outer.speed(0)
+            self.outer.ht()
+
+            self.inner = turtle.Turtle()
+            self.inner.speed(0)
+            self.inner.ht()
+
+            self.grid = turtle.Turtle()
+            self.grid.speed(0)
+            self.grid.ht()
+
+            # global instance of token turtle
+            self.token = turtle.Turtle()
+            self.token.speed(0)
+            self.token.ht()
+
+            # global instance of cross turtle
+            self.cross = turtle.Turtle()
+            self.cross.speed(0)
+            self.cross.ht()
+
+            # global instance of instruction turtle
+            self.instruction = turtle.Turtle()
+            self.instruction.speed(0)
+            self.instruction.ht()
+
+            # global instance of score turtle
+            self.score = turtle.Turtle()
+            self.score.speed(0)
+            self.score.ht()
+
+            # Window Setup - needs to be here so that we can initialise the window, draw and initialise the game board,
+            # capture the mouse clicks using window.mainloop()
+            self.window = turtle.Screen()
+            self.window.bgcolor("#444444")
+            self.window.colormode(255)
+
+            # draw the game board once only
+            self.draw_board(grid_pos, self.outer, self.inner, self.grid)
+        else:
+            # clear existing turtles
+            self.token.clear()
+            self.cross.clear()
+            self.instruction.clear()
+            self.score.clear()
+
+        # initialise the board positions
+        self.init_board(self.player_pos_list)
+        # return the game_board grid
+        return self.game_board
+
+    def reset(self, seed=None, options=None):
+        """
+        Resets the game, along with the default players and initial board positions
+        :param seed: set seed including super class
+        :param options: not used
+        :return: environment observations, environment info
+        """
         # initialise datastructure
         self.player_pos_list = self.generate_player_pos_list(grid_pos)
         self.game_board = np.zeros((len(self.player_pos_list), len(self.player_pos_list)))
 
-        # draw the game board
-        self.draw_board(grid_pos)
-        # set the initial pieces
-        self.init_board(self.player_pos_list)
+        self._render_frame()
 
         # variable for player turn - black always starts first
         self.curr_player = None
+        self.next_player = black_player
+        self.next_possible_actions = self.get_valid_board_pos(black_player)
 
         print("Game Reset.")
 
     def play(self):
+        """
+        initialise the mouse click callbacks and starts the event loop
+        :return:
+        """
         # each mouse click is to place the token
         self.window.onscreenclick(self.play_token)
         # listen for
@@ -101,24 +165,29 @@ class Othello():
         self.window.mainloop()
 
     @staticmethod
-    def alert_popup(title, message, path):
-        """Generate a pop-up window for special messages."""
+    def alert_popup(title, message):
+        """
+        Displays a pop-up window for messages
+        :param title: title string
+        :param message: string to show on popup
+        :return:
+        """
         root = Tk()
-        root.title(title)
+        root.wm_title(title)
         w = 400  # popup window width
-        h = 200  # popup window height
+        h = 100  # popup window height
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
         x = (sw - w) / 2
         y = (sh - h) / 2
         root.geometry('%dx%d+%d+%d' % (w, h, x, y))
-        m = message
-        m += '\n'
-        m += path
-        w = Label(root, text=m, width=120, height=10)
-        w.pack()
-        b = Button(root, text="OK", command=root.destroy, width=10)
-        b.pack()
+        # w = Label(root, text=message + '\n', width=120, height=10, font=("Verdana", 14))
+        # w.pack(side="top", fill="x", pady=10)
+        # b = Button(root, text="OK", command=root.destroy, width=10)
+        label = Label(root, text=message, font=("Verdana", 16), wraplength=300, justify="center")
+        label.pack(side="top", fill="x", pady=10)
+        button1 = Button(root, text="OK", command=root.destroy)
+        button1.pack()
         mainloop()
 
     # We will draw a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
@@ -130,6 +199,12 @@ class Othello():
     # player_pos_list[i+1]
     @staticmethod
     def generate_player_pos_list(_grid_pos):
+        """
+        Generates a list of player positions (x,y) based on the dimensions of the game board to facilitate the drawing
+        of the tokens on the board
+        :param _grid_pos: array of grid lines
+        :return: list of token positions (x,y) in points for each cell on the game board
+        """
         lst = [None] * (len(_grid_pos) + 1)
         for i in range(len(_grid_pos)):
             if _grid_pos[i] < 0:
@@ -142,32 +217,23 @@ class Othello():
         return lst
 
     @staticmethod
-    def draw_board(_grid_pos):
+    def draw_board(_grid_pos, outer, inner, grid):
+        """
+        draw the game board using turtles
+        :param _grid_pos: array of grid lines
+        :param outer: outer box turtle drawing object
+        :param inner: outer box turtle drawing object
+        :param grid: grid lines turtle drawing object
+        :return:
+        """
         border = 10
 
         grid_pos_x = max(_grid_pos) + 50 + border
         grid_pos_y = max(_grid_pos) + 50 + border
         grid_length = grid_pos_x + grid_pos_x
 
-        # Set this int to a number between 0 and 10, inclusive, to change the speed. Usually, lower is slower, except in the
-        # case of 0, which is the fastest possible.
-        speed = 0
-        if speed < 0 or speed > 10:
-            raise Exception("Speed out of range! Please input a value between 0 and 10 (inclusive)")
-
-        # Initializing Turtles
-        outer = turtle.Turtle()
-        inner = turtle.Turtle()
-        grid = turtle.Turtle()
-
-        # Hiding the turtles
-        outer.ht()
-        inner.ht()
-        grid.ht()
-
         # Making the outer border of the game
-        outer.speed(speed)
-        outer.color("#000000", "#FFFFFF")
+        outer.color((255, 255, 255))
         outer.up()
         outer.goto(grid_pos_x, grid_pos_y)
         outer.down()
@@ -178,8 +244,7 @@ class Othello():
         outer.end_fill()
 
         # Making the inner border of the game
-        inner.speed(speed)
-        inner.color("#000000", "#358856")
+        inner.color((53, 136, 86))
         inner.up()
         inner.goto(grid_pos_x - border, grid_pos_y - border)
         inner.down()
@@ -190,8 +255,7 @@ class Othello():
         inner.end_fill()
 
         # Making the grid
-        grid.speed(speed)
-        grid.color("#000000")
+        grid.color((0, 0, 0))
         for p in range(len(grid_pos)):
             grid.up()
             grid.goto(-grid_pos_x + border, grid_pos[p])
@@ -206,6 +270,14 @@ class Othello():
 
     # draw token
     def draw_token(self, x_ind, y_ind, colour, _pos_list):
+        """
+        draw token on the game board
+        :param x_ind: x pos index
+        :param y_ind: y pos index
+        :param colour: token colour (#000000 or #FFFFFF)
+        :param _pos_list: list of token positions (x,y) in points for each cell on the game board
+        :return:
+        """
         self.token.speed(0)
         self.token.up()
         self.token.goto(_pos_list[x_ind], _pos_list[y_ind])
@@ -213,6 +285,16 @@ class Othello():
 
     # draw cross
     def draw_cross(self, x_ind, y_ind, colour, width, length, _pos_list):
+        """
+        draw cross on the game board to mark out valid positions
+        :param x_ind: x pos index
+        :param y_ind: y pos index
+        :param width: width of the cross
+        :param length: length of the cross
+        :param colour: token colour (#000000 or #FFFFFF)
+        :param _pos_list: list of token positions (x,y) in points for each cell on the game board
+        :return:
+        """
         self.cross.speed(0)
         self.cross.width(width)
         self.cross.color(colour)
@@ -229,16 +311,20 @@ class Othello():
 
     # initialise game_board
     def init_board(self, _pos_list):
-
-        # turn turtle animation on or off and set a delay for update drawings.
-        self.window.delay(0)
-        self.window.tracer(False)
-
+        """
+        initialise the game board with starting positions
+        :param _pos_list: list of token positions (x,y) in points for each cell on the game board
+        :return:
+        """
         # set the game_board matrix
         self.game_board[3, 3] = black_player['id']
         self.game_board[4, 4] = black_player['id']
         self.game_board[3, 4] = white_player['id']
         self.game_board[4, 3] = white_player['id']
+
+        # turn turtle animation on or off and set a delay for update drawings.
+        self.window.delay(0)
+        self.window.tracer(0, 0)
 
         self.draw_token(3, 3, black_player['colour'], _pos_list)
         self.draw_token(4, 4, black_player['colour'], _pos_list)
@@ -257,10 +343,13 @@ class Othello():
 
         # Perform a TurtleScreen update. To be used when tracer is turned off.
         self.window.update()
-        self.window.tracer(True)
 
     # get the next player
     def get_player(self):
+        """
+        get the next player based on the current player
+        :return: the next player
+        """
         if self.curr_player == black_player:
             self.curr_player = white_player
         elif self.curr_player == white_player:
@@ -272,7 +361,13 @@ class Othello():
     # Function that returns all adjacent elements
     @staticmethod
     def get_adjacent(arr, i, j):
-
+        """
+        get the values of all adjacent cells of (i,j)
+        :param arr: 1d array of token positions
+        :param i: x index position
+        :param j: y index position
+        :return: vector of all values in the adjacent cells of (i,j)
+        """
         def is_valid_pos(_i, _j, _n, _m):
             if _i < 0 or _j < 0 or _i > _n - 1 or _j > _m - 1:
                 return 0
@@ -316,6 +411,11 @@ class Othello():
 
     @staticmethod
     def calculate_score(_game_board):
+        """
+        calculate the score of black and white players from game board
+        :param _game_board:
+        :return: white player score, black player score
+        """
         # calculate score the score
         score_white = 0
         score_black = 0
@@ -331,6 +431,12 @@ class Othello():
         return score_white, score_black
 
     def check_board_pos(self, x_ind, y_ind):
+        """
+        checks the x_ind, y_ind position if it is a valid position on the board
+        :param x_ind:
+        :param y_ind:
+        :return: True if valid, False if invalid position
+        """
         # get all the adjacent cells
         adj = self.get_adjacent(self.game_board, x_ind, y_ind)
         adj_sum = 0
@@ -346,6 +452,12 @@ class Othello():
         return valid_pos
 
     def get_valid_board_pos(self, player):
+        """
+        gets a list of all the valid positions that the player can place given the current board positions.
+        e.g. a player can only play a position if that position is able to flip token(s)
+        :param player:
+        :return: set of valid (x, y) positions
+        """
         assert player in (black_player, white_player), "illegal player input"
         flip_seq = []
         flip_tokens = False
@@ -364,6 +476,11 @@ class Othello():
         return set(valid_positions)
 
     def show_valid_board_pos(self, player):
+        """
+        display all valid player positions as crosses on the game board
+        :param player:
+        :return:
+        """
         # get all valid positions based on the next player
         self.player_valid_pos = self.get_valid_board_pos(player)
         # draw possible positions on board
@@ -374,6 +491,16 @@ class Othello():
 
     # check if the position has any tokens that can be flipped
     def eval_cell(self, x, y, _direction, _player, _flip_seq, _flip_tokens):
+        """
+        recursively evaluate all the possible cells to check if the position (x,y) has any tokens that can be flipped
+        :param x: x index position
+        :param y: y index position
+        :param _direction: direction of evaluation
+        :param _player: current player
+        :param _flip_seq: list of (x,y) positions that can be flipped
+        :param _flip_tokens: True = flip, False = do not flip
+        :return:
+        """
         try:
             cell_value = self.game_board[x, y]
 
@@ -424,6 +551,13 @@ class Othello():
 
     # add position to game board
     def add_to_board(self, x_ind, y_ind, player):
+        """
+        add x_ind, y_ind position to game board and flip tokens (if any)
+        :param x_ind: x index position
+        :param y_ind: y index position
+        :param player: current player
+        :return:
+        """
         # check that player is a valid player
         assert player in (black_player, white_player), "illegal player input"
 
@@ -474,7 +608,12 @@ class Othello():
     # place the token based on the mouse click position x, y
     # this function will then execute all the logic of the game
     def play_token(self, _x_pos, _y_pos):
-
+        """
+        Plays one move of the game.  This is a callback function for click of the mouse
+        :param _x_pos: x position in points of the mouse click
+        :param _y_pos: y position in points of the mouse click
+        :return:
+        """
         # get board index from mouse click x, y pos
         def get_board_index(_x_pos, _y_pos):
             # find the closest index for x, y coordinate
@@ -496,14 +635,14 @@ class Othello():
 
         # turn turtle animation on or off and set a delay for update drawings.
         self.window.delay(0)
-        self.window.tracer(False)
+        self.window.tracer(0, 0)
 
         # get the board index from the mouse position
         x_ind, y_ind = get_board_index(_x_pos, _y_pos)
 
         # check that this is a valid position
         if not self.check_board_pos(x_ind, y_ind):
-            self.alert_popup("Error", "You cannot place a token here", "")
+            self.alert_popup("Error", "You cannot place a token here")
             return
 
         # get the current player - which is the next player based on the current state of the board
@@ -551,13 +690,20 @@ class Othello():
 
             # Perform a TurtleScreen update. To be used when tracer is turned off.
             self.window.update()
-            self.window.tracer(True)
 
     def exit_program(self):
+        """
+        terminates the turtle window and exits the program
+        :return:
+        """
         self.window.bye()
         sys.exit()
 
     def close(self):
+        """
+        This is a callback function for the escape key to end the program
+        :return:
+        """
         self.score.clear()
         self.instruction.clear()
 
@@ -577,13 +723,21 @@ if __name__ == '__main__':
 
     # initialise game
     game = Othello()
+    # reset
+    game.reset()
     # play game
     game.play()
 
     # calculate final score
     final_score_white, final_score_black = game.calculate_score(game.game_board)
     # display winner
+    msg = ""
     if final_score_white > final_score_black:
-        game.alert_popup("Game Completed", "White Player is the Winner with " + str(final_score_white) + " points", "")
-    else:
-        game.alert_popup("Game Completed", "Black Player is the Winner with " + str(final_score_black) + " points", "")
+        msg += "White Player is the Winner with " + str(final_score_white) + " points"
+    elif final_score_white < final_score_black:
+        msg += "Black Player is the Winner with " + str(final_score_black) + " points"
+    elif final_score_white == final_score_black:
+        msg += "Game is a draw with " + \
+               "Black player: " + str(final_score_black) + " and White player:" + str(final_score_white) + " points"
+
+    game.alert_popup("Game Completed", msg)

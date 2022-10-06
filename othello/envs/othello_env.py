@@ -1,4 +1,3 @@
-import cProfile as profile
 import random
 import turtle
 from tkinter import *
@@ -6,6 +5,12 @@ from tkinter import *
 import gym
 import numpy as np
 from gym import spaces
+
+# for performance profiling
+# import cProfile as profile
+from memory_profiler import profile
+
+fp = open("report-env.log", "w+")  # to capture memory profile logs
 
 # Making the coordinate arrays
 grid_pos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
@@ -22,7 +27,7 @@ class OthelloEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     def __init__(self, render_mode=None):
-        '''
+        """
         Initialises the key game variables
 
         player_pos_list - list of player positions based on grid size
@@ -33,8 +38,7 @@ class OthelloEnv(gym.Env):
         instruction - Turtle graphics object for instruction text
         score - Turtle graphics object for score text
         window - Turtle graphics object to display game window and for GUI events
-        '''
-
+        """
         # global instance of turtles
         self.outer = None
         self.inner = None
@@ -65,7 +69,7 @@ class OthelloEnv(gym.Env):
         self.next_possible_actions = set()  # a set of the possible coordinates (row, col) for the next player
 
         # define observation space
-        self.observation_shape = (8, 8)  # it is a 8 row by 8 col grid
+        self.observation_shape = (8, 8)  # 8 row by 8 col grid
         self.observation_space = spaces.Dict(
             {
                 # the observation is a very large discrete space, and I do not want to use it
@@ -74,7 +78,7 @@ class OthelloEnv(gym.Env):
             }
         )
 
-        self.STEP_LIMIT = 1000  # safe guard to ensure agent doesn't get stuck in a loop
+        self.STEP_LIMIT = 1000  # safeguard to ensure agent doesn't get stuck in a loop
         self.sleep = 0  # slow the rendering for human
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
@@ -83,39 +87,67 @@ class OthelloEnv(gym.Env):
         """
         If human-rendering is used, `self.window` will be a reference
         to the window that we draw to. `self.clock` will be a clock that is used
-        to ensure that the environment is rendered at the correct framerate in
+        to ensure that the environment is rendered at the correct frame rate in
         human-mode. They will remain `None` until human-mode is used for the
         first time.
         """
         self.window = None
 
-        # # profiling
+        # performance profiling
         # self.prof = profile.Profile()
 
     def _get_obs(self):
+        """
+        helper function to get environment observations
+        :return: a set of "state" and 1d array of positions on game board
+        """
         return {"state": self.game_board.flatten()}  # self.game_board
 
     def _get_info(self):
+        """
+        helper function to get environment information
+        :return: a set of next player, set of next possible actions and current state winner
+        """
         return {"next_player": self.next_player, "next_possible_actions": self.next_possible_actions,
                 "winner": self.winner}
 
     def _action_to_pos(self, action):
+        """
+        helper function to convert action into game board positions
+        :param action: integer 0 - 63 corresponding to each position on the game board
+        :return: a set of next player, set of next possible actions and current state winner
+        """
         assert self.action_space.contains(action), "Invalid Action"
         y_ind = action % 8
         x_ind = (action // 8) % 8
         return x_ind, y_ind
 
     def _pos_to_action(self, x_ind, y_ind):
+        """
+        helper function to convert game board position into integer
+        :param x_ind: x position on game board
+        :param y_ind: y position on game board
+        :return: a set of next player, set of next possible actions and current state winner
+        """
         action = (x_ind * 8) + y_ind
         assert self.action_space.contains(action), "Invalid Action"
         return action
 
     def render(self):
+        """
+        method override from gym class for rendering the game environment
+        :return: _render_frame()
+        """
         if self.render_mode == "rgb_array":
             return self._render_frame()
 
+    # @profile(stream=fp)
     def _render_frame(self):
-
+        """
+        if render_mode is human, initialise the turtle objects for rendering and draw game board. Regardless of
+        modes, always initialise the board
+        :return: 1d array of positions on game board, this is the same as initial observations of the environment
+        """
         if self.window is None and self.render_mode == "human":
             self.outer = turtle.Turtle()
             self.outer.speed(0)
@@ -169,10 +201,14 @@ class OthelloEnv(gym.Env):
         # return the game_board grid
         return self.game_board
 
+    # @profile(stream=fp)
     def reset(self, seed=None, options=None):
-        '''
-        Resets the game, along with the default snake size and spawning food.
-        '''
+        """
+        Resets the game, along with the default players and initial board positions
+        :param seed: set seed including super class
+        :param options: not used
+        :return: environment observations, environment info
+        """
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
@@ -193,7 +229,7 @@ class OthelloEnv(gym.Env):
 
         return observation, info
 
-    # We will draws a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
+    # We will draw a dot based on the turtle's position as the center of the circle. Because of this, we need a new array
     # called playerposlist. The values in this will be 25 away from each value in gridpos, because our grid boxes are 50x50.
     # So, we'll start at -225, then -175, -125, etc.
     # Note that because the gridpos are actually position of the lines, therefore the number of boxes will be 1 + no of
@@ -202,6 +238,12 @@ class OthelloEnv(gym.Env):
     # playerposlist[i+1]
     @staticmethod
     def generate_player_pos_list(_grid_pos):
+        """
+        Generates a list of player positions (x,y) based on the dimensions of the game board to facilitate the drawing
+        of the tokens on the board
+        :param _grid_pos: array of grid lines
+        :return: list of token positions (x,y) in points for each cell on the game board
+        """
         lst = [None] * (len(_grid_pos) + 1)
         for i in range(len(_grid_pos)):
             if _grid_pos[i] < 0:
@@ -215,6 +257,14 @@ class OthelloEnv(gym.Env):
 
     @staticmethod
     def draw_board(_grid_pos, outer, inner, grid):
+        """
+        draw the game board using turtles
+        :param _grid_pos: array of grid lines
+        :param outer: outer box turtle drawing object
+        :param inner: outer box turtle drawing object
+        :param grid: grid lines turtle drawing object
+        :return:
+        """
         border = 10
 
         grid_pos_x = max(_grid_pos) + 50 + border
@@ -222,7 +272,6 @@ class OthelloEnv(gym.Env):
         grid_length = grid_pos_x + grid_pos_x
 
         # Making the outer border of the game
-        # outer.color("#000000", "#FFFFFF")
         outer.color((255, 255, 255))
         outer.up()
         outer.goto(grid_pos_x, grid_pos_y)
@@ -234,7 +283,6 @@ class OthelloEnv(gym.Env):
         outer.end_fill()
 
         # Making the inner border of the game
-        # inner.color("#000000", "#358856")
         inner.color((53, 136, 86))
         inner.up()
         inner.goto(grid_pos_x - border, grid_pos_y - border)
@@ -261,6 +309,14 @@ class OthelloEnv(gym.Env):
 
     # draw token
     def draw_token(self, x_ind, y_ind, colour, _pos_list):
+        """
+        draw token on the game board
+        :param x_ind: x pos index
+        :param y_ind: y pos index
+        :param colour: token colour (#000000 or #FFFFFF)
+        :param _pos_list: list of token positions (x,y) in points for each cell on the game board
+        :return:
+        """
         self.token.speed(0)
         self.token.up()
         self.token.goto(_pos_list[x_ind], _pos_list[y_ind])
@@ -268,6 +324,16 @@ class OthelloEnv(gym.Env):
 
     # draw cross
     def draw_cross(self, x_ind, y_ind, colour, width, length, _pos_list):
+        """
+        draw cross on the game board to mark out valid positions
+        :param x_ind: x pos index
+        :param y_ind: y pos index
+        :param width: width of the cross
+        :param length: length of the cross
+        :param colour: token colour (#000000 or #FFFFFF)
+        :param _pos_list: list of token positions (x,y) in points for each cell on the game board
+        :return:
+        """
         self.cross.speed(0)
         self.cross.width(width)
         self.cross.color(colour)
@@ -284,7 +350,11 @@ class OthelloEnv(gym.Env):
 
     # initialise gameboard
     def init_board(self, _pos_list):
-
+        """
+        initialise the game board with starting positions
+        :param _pos_list: list of token positions (x,y) in points for each cell on the game board
+        :return:
+        """
         # set the game_board matrix
         self.game_board[3, 3] = black_player['id']
         self.game_board[4, 4] = black_player['id']
@@ -315,6 +385,10 @@ class OthelloEnv(gym.Env):
 
     # get the next player
     def get_player(self):
+        """
+        get the next player based on the current player
+        :return: the next player
+        """
         if self.curr_player == black_player:
             self.curr_player = white_player
         elif self.curr_player == white_player:
@@ -326,6 +400,14 @@ class OthelloEnv(gym.Env):
     # Function that returns all adjacent elements
     @staticmethod
     def get_adjacent(arr, i, j):
+        """
+        get the values of all adjacent cells of (i,j)
+        :param arr: 1d array of token positions
+        :param i: x index position
+        :param j: y index position
+        :return: vector of all values in the adjacent cells of (i,j)
+        """
+
         def is_valid_pos(_i, _j, _n, _m):
             if _i < 0 or _j < 0 or _i > _n - 1 or _j > _m - 1:
                 return 0
@@ -369,6 +451,11 @@ class OthelloEnv(gym.Env):
 
     @staticmethod
     def calculate_score(_game_board):
+        """
+        calculate the score of black and white players from game board
+        :param _game_board:
+        :return: white player score, black player score
+        """
         # calculate score the score
         score_white = 0
         score_black = 0
@@ -384,6 +471,12 @@ class OthelloEnv(gym.Env):
         return score_white, score_black
 
     def check_board_pos(self, x_ind, y_ind):
+        """
+        checks the x_ind, y_ind position if it is a valid position on the board
+        :param x_ind:
+        :param y_ind:
+        :return: True if valid, False if invalid position
+        """
         # get all the adjacent cells
         adj = self.get_adjacent(self.game_board, x_ind, y_ind)
         adj_sum = 0
@@ -398,7 +491,14 @@ class OthelloEnv(gym.Env):
 
         return valid_pos
 
+    # @profile(stream=fp)
     def get_valid_board_pos(self, player):
+        """
+        gets a list of all the valid positions that the player can place given the current board positions.
+        e.g. a player can only play a position if that position is able to flip token(s)
+        :param player:
+        :return: set of valid (x, y) positions
+        """
         assert player in (black_player, white_player), "illegal player input"
         flip_seq = []
         flip_tokens = False
@@ -418,6 +518,11 @@ class OthelloEnv(gym.Env):
         return set(valid_positions)
 
     def show_valid_board_pos(self, player):
+        """
+        display all valid player positions as crosses on the game board
+        :param player:
+        :return:
+        """
         # get all valid positions for the player
         self.player_valid_pos = self.get_valid_board_pos(player)
         # draw possible positions on board
@@ -426,8 +531,18 @@ class OthelloEnv(gym.Env):
             self.cross.setheading(0)
             self.draw_cross(pos[0], pos[1], "NavyBlue", 3, 10, self.player_pos_list)
 
-    # check if the position has any tokens that can be flipped
+    # @profile(stream=fp)
     def eval_cell(self, x, y, _direction, _player, _flip_seq, _flip_tokens):
+        """
+        recursively evaluate all the possible cells to check if the position (x,y) has any tokens that can be flipped
+        :param x: x index position
+        :param y: y index position
+        :param _direction: direction of evaluation
+        :param _player: current player
+        :param _flip_seq: list of (x,y) positions that can be flipped
+        :param _flip_tokens: True = flip, False = do not flip
+        :return:
+        """
         try:
             cell_value = self.game_board[x, y]
 
@@ -476,8 +591,14 @@ class OthelloEnv(gym.Env):
         except (IndexError, ValueError):
             return False, []
 
-    # add position to game board
     def add_to_board(self, x_ind, y_ind, player):
+        """
+        add x_ind, y_ind position to game board and flip tokens (if any)
+        :param x_ind: x index position
+        :param y_ind: y index position
+        :param player: current player
+        :return:
+        """
         # count the number of flipped tokens
         flipped_cnt = 0
 
@@ -527,10 +648,14 @@ class OthelloEnv(gym.Env):
 
         return flipped_cnt
 
-    # place the token based on the mouse click position x, y this function will then execute all the logic of the game
-    # change from play_token to step
+    # @profile(stream=fp)
     def step(self, action):
-
+        """
+        Plays one move of the game. Method override from gym class to capture the environment changes for each step.
+        :param action: integer 0 - 63 corresponding to each play position on the game board
+        :return: observation, reward, done, FALSE, info
+        """
+        # performance profiling
         # self.prof.enable()
 
         # turn turtle animation on or off and set a delay for update drawings.
@@ -631,18 +756,28 @@ class OthelloEnv(gym.Env):
         # return game information
         info = self._get_info()
 
+        # performance profiling
         # self.prof.disable()
 
         # additional parameter truncated is always FALSE
         return observation, reward, done, FALSE, info
 
-    # get random action from list of possible actions (use to train agent)
+
     def get_random_action(self):
+        """
+        get random action from list of possible actions (use to train agent)
+        :return: tuple of next possible positions based on the current player and state of the board
+        """
         if self.next_possible_actions:
             return random.choice(list(self.next_possible_actions))
         return ()
 
     def close(self):
+        """
+        Method override from gym class to close the environment. This will clear and reset all the turtles and close the
+        turtle window
+        :return:
+        """
         self.outer.clear()
         self.outer.reset()
 
