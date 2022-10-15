@@ -152,18 +152,20 @@ class OthelloDQN:
             observation = np.expand_dims(observation, axis=0)  # (1, 64, )
 
             with tf.device('/cpu:0'):
-                prediction = self.model_eval.predict(observation, verbose=0)  # [0.4 ... 0.6] (64, )
+                prediction = self.model_target.predict_on_batch(observation)
+                # prediction = self.model_eval.predict(observation, verbose=0)  # [0.4 ... 0.6] (64, )
                 # prediction = tf.where(mask, -1e9, prediction)  # same as torch.masked_fill
                 # prediction = tf.nn.softmax(prediction, axis=None, name=None)  # all masked prob equal to 0 after this step
-            prediction = np.ma.array(prediction, mask=mask).filled(fill_value=-1e9)
-            prediction = softmax(prediction, axis=None)
+
+            # prediction = np.ma.array(prediction, mask=mask).filled(fill_value=-1e9)
+            # prediction = softmax(prediction, axis=None)
+            prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
 
             # action = tf.argmax(prediction[0], axis=1)
             # action = int(tf.keras.backend.eval(action))
             action = np.argmax(prediction[0], axis=1).item()
 
             # print("Epsilon:", '%.4f' % self.epsilon, "Agent play:", action)
-
         else:
             action = random.choice(list(possible_actions))
             action = (action[0] * 8) + action[1]
