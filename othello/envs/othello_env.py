@@ -1,16 +1,16 @@
 import random
+import numpy as np
+
 import turtle
 from tkinter import *
 
 import gym
-import numpy as np
 from gym import spaces
 
 # for performance profiling
 # import cProfile as profile
-from memory_profiler import profile
-
-fp = open("report-env.log", "w+")  # to capture memory profile logs
+# from memory_profiler import profile
+# fp = open("report-env.log", "w+")  # to capture memory profile logs
 
 # Making the coordinate arrays
 grid_pos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
@@ -685,7 +685,7 @@ class OthelloEnv(gym.Env):
         possible_actions = self.get_valid_board_pos(next_player)
         # if there is no possible action for next player, then skip the next player and turn now reverts to current
         # player
-        if not (len(possible_actions) > 0):
+        if len(possible_actions) == 0:
             # back to current player's turn
             curr_possible_actions = self.get_valid_board_pos(player)
             # if even current player cannot place any position then game ends
