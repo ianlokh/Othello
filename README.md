@@ -4,6 +4,15 @@ Please refer to <https://developer.apple.com/metal/tensorflow-plugin/> for the l
 
 For installation on MacOS with conda use miniforge instead of Anaconda
 
+If you encounter the following error:
+```commandline
+ERROR: Could not find a version that satisfies the requirement tensorflow-macos (from versions: none)
+ERROR: No matching distribution found for tensorflow-macos
+```
+you can try running the following to install tensorflow-macos
+```
+SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos tensorflow-metal
+```
 ## Gym Installation
 
 Run the following to install OpenAI Gym
