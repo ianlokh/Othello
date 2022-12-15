@@ -63,6 +63,7 @@ class Othello:
         self.game_over = False
 
         # variable for player turn
+        self.skip_turn = False
         self.curr_player = None
         self.next_player = None
 
@@ -205,9 +206,10 @@ class Othello:
         self.game_over = False
 
         # variable for player turn - black always starts first
-        self.curr_player = None
-        self.next_player = black_player
-        self.next_possible_actions = self.get_valid_board_pos(black_player)
+        self.skip_turn = False
+        self.curr_player = black_player
+        self.next_player = white_player
+        self.next_possible_actions = self.get_valid_board_pos(self.curr_player)
 
         print("Game Reset.")
 
@@ -471,17 +473,15 @@ class Othello:
         self.window.update()
 
     # get the next player
-    def get_player(self):
+    def get_next_player(self):
         """
         get the next player based on the current player
         :return: the next player
         """
-        if self.curr_player == black_player:
-            self.curr_player = white_player
-        elif self.curr_player == white_player:
+        if self.curr_player is None:
             self.curr_player = black_player
-        elif self.curr_player is None:
-            self.curr_player = black_player
+        else:
+            self.curr_player = white_player if self.curr_player == black_player else black_player
         return self.curr_player
 
     # Function that returns all adjacent elements
@@ -557,7 +557,7 @@ class Othello:
 
         return score_white, score_black
 
-    def check_board_pos(self, x_ind, y_ind):
+    def check_board_pos(self, x_ind, y_ind, player):
         """
         checks the x_ind, y_ind position if it is a valid position on the board
         :param x_ind:
@@ -571,7 +571,7 @@ class Othello:
             adj_sum += abs(adj[i])
 
         # position must be either 0 or near an already placed token
-        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.player_valid_pos:
+        if self.game_board[x_ind, y_ind] == 0 and adj_sum > 0 and (x_ind, y_ind) in self.get_valid_board_pos(player):
             valid_pos = True
         else:
             valid_pos = False
@@ -757,9 +757,10 @@ class Othello:
 
     # place the token based on the mouse click position x, y
     # this function will then execute all the logic of the game
-    def play_token(self, x_ind, y_ind):
+    def play_token(self, x_ind, y_ind, player):
         """
         Plays one move of the game.  This is a callback function for click of the mouse
+        :param player:
         :param x_ind: x position on game board
         :param y_ind: y position on game board
         :return: True - if play is valid, False - if play is invalid
@@ -768,13 +769,13 @@ class Othello:
         self.window.delay(0)
         self.window.tracer(0, 0)
 
+        # set / reset skip_turn variable
+        self.skip_turn = False
+
         # check that this is a valid position
-        if not self.check_board_pos(x_ind, y_ind):
+        if not self.check_board_pos(x_ind, y_ind, player):
             self.message_popup("Error", "You cannot place a token here", "ok_message")
             return False
-
-        # get the current player - which is the next player based on the current state of the board
-        player = self.get_player()
 
         # add the token to the board
         self.add_to_board(x_ind, y_ind, player)
@@ -811,13 +812,16 @@ class Othello:
             # back to current player's turn
             curr_possible_actions = self.get_valid_board_pos(player)
             # if even current player cannot place any position then game ends
-            if not (len(curr_possible_actions) > 0):
+            if len(curr_possible_actions) == 0:
                 self.next_possible_actions = set()
                 self.next_player = None
                 self.game_over = True
-            else:  # if current player can place position then continue with current player as next player
+            else:  # if current player can place position then continue with next player as current player
                 self.next_possible_actions = curr_possible_actions
-                self.curr_player = next_player  # this is so that the get_player() is getting the correct player turn
+                self.skip_turn = True  # set prev player as player to indicate a skip turn
+                self.curr_player = player  # this is so that the get_player() is getting the correct player turn
+                # get all valid positions based on the next player and draw valid positions on board
+                self.show_valid_board_pos(player)
         else:
             # write instructions for next player
             self.player_instruction.clear()
@@ -826,8 +830,8 @@ class Othello:
             self.player_instruction.write(next_player['label'] + " To Play", align="center",
                                           font=("Courier", 24, "bold"))
 
-            # Perform a TurtleScreen update. To be used when tracer is turned off.
-            self.window.update()
+        # Perform a TurtleScreen update. To be used when tracer is turned off.
+        self.window.update()
 
         return True
 
@@ -840,7 +844,16 @@ class Othello:
         """
         # get the board index from the mouse position
         x_ind, y_ind = self.get_board_index(_x_pos, _y_pos)
-        self.play_token(x_ind, y_ind)
+        is_valid_play = self.play_token(x_ind, y_ind, self.curr_player)
+
+        # if it is valid play and it is not a skip turn then it is black player turn
+        # this is for the case when the next turn cannot be played so the black player goes again
+        if is_valid_play and not self.skip_turn:
+            # next player turn else play is still with current player
+            # self.curr_player = white_player if self.curr_player == black_player else black_player
+            self.curr_player = self.get_next_player()
+        else:  # if not valid placement then return and don't proceed to agent turn and exit
+            return
 
         if self.game_over:
             self.end_game()
@@ -853,25 +866,45 @@ class Othello:
         :return:
         """
         # if human turn and there is a valid next action then play human position
-        if self.next_player == black_player and len(self.next_possible_actions) > 0:
+        if self.curr_player == black_player and len(self.next_possible_actions) > 0:
             # play human move
             x_ind, y_ind = self.get_board_index(_x_pos, _y_pos)
             # return True if token can be placed in a valid position
-            is_valid_play = self.play_token(x_ind, y_ind)
-            # if not valid placement then return and don't proceed to agent turn
-            if not is_valid_play:
+            is_valid_play = self.play_token(x_ind, y_ind, self.curr_player)
+
+            # if it is valid play and it is not a skip turn then it is white player (agent) turn
+            # this is for the case when the next turn cannot be played so the black player goes again
+            if is_valid_play and not self.skip_turn:
+                # next player turn else play is still with current player
+                # self.curr_player = white_player if self.curr_player == black_player else black_player
+                self.curr_player = self.get_next_player()
+            else:  # if not valid placement then return and don't proceed to agent turn and exit
                 return
 
-            # if after human move there are next possible moves then agent will play
+            # if after human move there are next possible moves then agent will play else if no other move for agent
+            # then end game
             if len(self.next_possible_actions) > 0:
-                # play agent move
-                action = self.rl_agent.choose_action(self.game_board.flatten().reshape((1, 64)),
-                                                     self.next_possible_actions)
-                y_ind = action % 8
-                x_ind = (action // 8) % 8
-                # check that agent can make a valid move
-                assert (x_ind, y_ind) in self.next_possible_actions, "Invalid Next Action"
-                self.play_token(x_ind, y_ind)
+
+                while True:
+                    # play agent move
+                    action = self.rl_agent.choose_action(self.game_board.flatten().reshape((1, 64)),
+                                                         self.next_possible_actions)
+                    y_ind = action % 8
+                    x_ind = (action // 8) % 8
+                    # check that agent can make a valid move
+                    assert (x_ind, y_ind) in self.next_possible_actions, "Invalid Next Action"
+                    is_valid_play = self.play_token(x_ind, y_ind, self.curr_player)
+
+                    # if it is valid play and it is not a skip turn then it is black player turn
+                    # this is for the case when the next turn cannot be played so the white player (agent) goes again
+                    if is_valid_play and not self.skip_turn:
+                        # next player turn else play is still with current player
+                        # self.curr_player = white_player if self.curr_player == black_player else black_player
+                        self.curr_player = self.get_next_player()
+                        break
+                    # else:  # if not valid placement then return and don't proceed to agent turn and exit
+                    #     return
+
             else:
                 self.next_possible_actions = set()
                 self.next_player = None
