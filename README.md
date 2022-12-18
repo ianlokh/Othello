@@ -5,7 +5,7 @@ Please refer to <https://developer.apple.com/metal/tensorflow-plugin/> for the l
 For installation on MacOS with conda use miniforge instead of Anaconda
 
 If you encounter the following error:
-```commandline
+```commandline=bash
 ERROR: Could not find a version that satisfies the requirement tensorflow-macos (from versions: none)
 ERROR: No matching distribution found for tensorflow-macos
 ```
@@ -13,15 +13,26 @@ you can try running the following to install tensorflow-macos
 ```
 SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos tensorflow-metal
 ```
-## Gym Installation
+## Gymnasium Installation
 
-Run the following to install OpenAI Gym
+Run the following to install Gymnasium (fork of OpenAI Gym). https://github.com/Farama-Foundation/Gymnasium.git 
 
-```
-pip install -U gym
-pip install -U "gym[others]"
-pip install -U "gym[atari]"
+```commandline=console
+pip install -U gymnasium
+pip install -U "gymnasium[atari]"
+pip install -U "gymnasium[all]"
 pip install -U "autorom[accept-rom-license]"
+```
+
+## keras-rl2 Installation
+keras-rl2 implements deep reinforcement learning algorithms in Python and seamlessly integrates with the deep learning library Keras. 
+Installation of keras-rl2 is optional. For the original repo please refer to https://github.com/taylormcnally/keras-rl2.git
+
+If you do want to use keras-rkl2, please download the fork from my repo as I have made some changes to the original code to support gym 0.26.0
+```commandline=console
+git clone https://github.com/ianlokh/keras-rl2.git
+cd keras-rl
+python setup.py install
 ```
 
 
