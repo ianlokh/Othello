@@ -8,7 +8,8 @@ import copy
 import pstats
 from datetime import datetime
 
-import gym
+# import gym
+import gymnasium as gym
 import tensorflow as tf
 
 # setting this to ensure that we can reproduce the results
@@ -123,7 +124,7 @@ def train():
     # this is reward_history for white
     reward_history.append(np.sum(ep_reward))
 
-    if (epoch % 30 == 0) and (epoch > 1):  # log winning rate in every 30 eps
+    if (epoch % 50 == 0) and (epoch > 1):  # log winning rate in every 50 eps
         winning_rate.append((epoch, np.mean(is_white)))
         is_white = []
         print("\n***** Epoch: {:d}/{:d}, white player winning rate in latest 30 rounds: {:.2%}. *****\n".format(epoch, EPOCHS, winning_rate[-1][1]))
@@ -140,7 +141,7 @@ def train():
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    EPOCHS = 20000
+    EPOCHS = 40000
     is_white = []
     reward_history = []
     winning_rate = []

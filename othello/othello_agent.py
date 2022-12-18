@@ -32,7 +32,7 @@ class OthelloDQN:
 
         self.gamma = 0.95  # reward decay rate
         self.alpha1 = 0.1  # soft copy weights from white to black, alpha1 updates while (1-alpha1) remains
-        self.alpha2 = 0.2  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
+        self.alpha2 = 0.4  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
         self.epsilon_reduce = 0.99975  # 0.995, 0.9995, 0.99975
         self.epsilon = 1.0
 
@@ -47,7 +47,7 @@ class OthelloDQN:
         self.replace_target_iter = 75  # 10, 50, 75, 100, 150
 
         # replay buffer settings
-        self.replay_buffer_size = 40000  # 20000, 40000, 75000
+        self.replay_buffer_size = 75000  # 20000, 40000, 75000
         self.replay_buffer = deque(maxlen=self.replay_buffer_size)
 
         # define the q network
@@ -96,6 +96,7 @@ class OthelloDQN:
 
             tf.keras.layers.Dense(128, activation="relu"),
             tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128, activation="relu"),
 
             tf.keras.layers.Dense(64),
             tf.keras.layers.BatchNormalization(),
@@ -107,7 +108,14 @@ class OthelloDQN:
         ])
 
         # Model is the full model w/o custom layers
-        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
+        # _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
+
+        # for tensorflow-macos 2.11 and tensorflow-metal 0.7.0 need to switch to legacy optimiser SGD because Adam
+        # optimiser issues and where a new optimizer API has been implemented where a default JIT compilation flag is
+        # set https://developer.apple.com/forums/thread/721619
+        _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
+                                                                momentum=0.1,
+                                                                nesterov=True),
                        loss=tf.keras.losses.MeanSquaredError(),
                        # loss=tf.keras.losses.MeanAbsoluteError(),
                        # loss=root_mean_squared_log_error,
@@ -183,10 +191,10 @@ class OthelloDQN:
         :return:
         """
         if self.player == "white":
-            self.model_target.set_weights(self.model_eval.get_weights())
+            # self.model_target.set_weights(self.model_eval.get_weights())
 
-            # self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha2, dtype=object) +
-            #                               np.multiply(self.model_target.get_weights(), (1 - self.alpha2), dtype=object))
+            self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha2, dtype=object) +
+                                          np.multiply(self.model_target.get_weights(), (1 - self.alpha2), dtype=object))
 
             # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
             #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)

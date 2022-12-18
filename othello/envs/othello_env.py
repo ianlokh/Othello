@@ -4,8 +4,9 @@ import numpy as np
 import turtle
 from tkinter import *
 
-import gym
-from gym import spaces
+# import gym
+import gymnasium as gym
+from gymnasium import spaces
 
 # for performance profiling
 # import cProfile as profile
@@ -389,12 +390,17 @@ class OthelloEnv(gym.Env):
         get the next player based on the current player
         :return: the next player
         """
-        if self.curr_player == black_player:
-            self.curr_player = white_player
-        elif self.curr_player == white_player:
+        # if self.curr_player == black_player:
+        #     self.curr_player = white_player
+        # elif self.curr_player == white_player:
+        #     self.curr_player = black_player
+        # elif self.curr_player is None:
+        #     self.curr_player = black_player
+
+        if self.curr_player is None:
             self.curr_player = black_player
-        elif self.curr_player is None:
-            self.curr_player = black_player
+        else:
+            self.curr_player = white_player if self.curr_player == black_player else black_player
         return self.curr_player
 
     # Function that returns all adjacent elements
