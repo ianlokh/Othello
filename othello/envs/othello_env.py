@@ -741,7 +741,7 @@ class OthelloEnv(gym.Env):
         self.window.update()
 
         if done:
-            conclusion = "Game Over! "
+            conclusion = "\nGame Over! "
             if _score_black == _score_white:  # Tie
                 reward += 2
                 self.winner = "Tie"

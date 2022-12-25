@@ -20,63 +20,19 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 SEED = 42
 
 
-class OthelloDQN:
-    def __init__(self, nb_observations, player="white"):
+class OthelloDQNModel:
+    """
+    Class for the deep neural network model
+    """
+    def __init__(self, nb_observations, action_dim, learning_rate):
+        self.nb_observations = nb_observations
+        self.action_dim = action_dim
+        self.learning_rate = learning_rate
 
-        self.set_global_determinism(seed=SEED)
-
-        self.player = player
-
-        self.action_dim = 64
-        self.state_dim = 64
-
-        self.gamma = 0.95  # reward decay rate
-        self.alpha1 = 0.1  # soft copy weights from white to black, alpha1 updates while (1-alpha1) remains
-        self.alpha2 = 0.4  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
-        self.epsilon_reduce = 0.99975  # 0.995, 0.9995, 0.99975
-        self.epsilon = 1.0
-
-        # q network learning parameters
-        self.learning_rate = 0.0005  # 0.001, 0.0005, 0.0001
-        self.batch_size = 128  # 128, 256, 512, 768, 1024, 2048
-        self.training_epochs = 50  # 15, 20, 50, 100
-
-        # total learning step - count how many times the eval net has been updated, used to set a basis for updating
-        # the target net
-        self.learn_step_counter = 0
-        self.replace_target_iter = 75  # 10, 50, 75, 100, 150
-
-        # replay buffer settings
-        self.replay_buffer_size = 75000  # 20000, 40000, 75000
-        self.replay_buffer = deque(maxlen=self.replay_buffer_size)
-
-        # define the q network
-        self.model_full_path = "./models/"
-        self.model_eval = self.build_model(nb_observations)  # this is the q network
-
-        if self.player == "white":  # only while player learns
-            self.model_target = self.build_model(nb_observations)  # this is the target network
-
-        # performance profiling
-        # self.cprof = cprofile.Profile()
-
-    @staticmethod
-    def set_env_seeds(seed=SEED):
-        os.environ['PYTHONHASHSEED'] = str(seed)
-        random.seed(seed)
-        tf.random.set_seed(seed)
-        np.random.seed(seed)
-
-    def set_global_determinism(self, seed=SEED):
-        self.set_env_seeds(seed=seed)
-        os.environ['TF_DETERMINISTIC_OPS'] = '1'
-        os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
-
-    def build_model(self, nb_observations):
+    def build_model(self):
         """
-        build DQN model
-        :param nb_observations: no. of observations from the game board
-        :return: DQN model
+        build tensorflow model
+        :return: tensorflow model
         """
         def root_mean_squared_log_error(y_true, y_pred):
             msle = tf.keras.losses.MeanSquaredLogarithmicError()
@@ -87,7 +43,7 @@ class OthelloDQN:
             return K.sqrt(mse(y_true, y_pred))
 
         _model = tf.keras.Sequential([
-            tf.keras.layers.Dense(64, input_shape=(1, nb_observations), activation="relu"),
+            tf.keras.layers.Dense(64, input_shape=(1, self.nb_observations), activation="relu"),
             tf.keras.layers.Dense(64, activation="relu"),
 
             tf.keras.layers.Dense(64),
@@ -123,6 +79,132 @@ class OthelloDQN:
                        metrics=['accuracy'])
 
         return _model
+
+
+class OthelloDQN:
+    """
+    Class for the OthelloDQN object
+    """
+
+    def __init__(self, nb_observations, player="white"):
+
+        self.set_global_determinism(seed=SEED)
+
+        self.player = player
+
+        self.action_dim = 64
+        self.state_dim = 64
+
+        self.gamma = 0.95  # reward decay rate
+        self.alpha1 = 0.1  # soft copy weights from white to black, alpha1 updates while (1-alpha1) remains
+        self.alpha2 = 0.45  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
+        self.epsilon_reduce = 0.99975  # 0.995, 0.9995, 0.99975
+        self.epsilon = 1.0
+
+        # q network learning parameters
+        self.learning_rate = 0.0005  # 0.001, 0.0005, 0.0001
+        self.batch_size = 128  # 128, 256, 512, 768, 1024, 2048
+        self.training_epochs = 50  # 15, 20, 50, 100
+
+        # total learning step - count how many times the eval net has been updated, used to set a basis for updating
+        # the target net
+        self.learn_step_counter = 0
+        self.replace_target_iter = 75  # 10, 50, 75, 100, 150
+
+        # replay buffer settings
+        self.replay_buffer_size = 75000  # 20000, 40000, 75000
+        self.replay_buffer = deque(maxlen=self.replay_buffer_size)
+
+        # define the q network
+        self.model_full_path = "./models/"
+
+        # only white player learns hence q network will only be created for white player
+        if self.player == "white":
+            # self.model_eval = self.build_model(nb_observations)  # this is the q network
+            self.model_eval = OthelloDQNModel(nb_observations, self.action_dim,
+                                              self.learning_rate).build_model()  # this is the q network
+
+        # regardless of training (random or self-play) target network will always be created because this is the network
+        # that will be used to predict the action
+        # self.model_target = self.build_model(nb_observations)  # this is the target network
+        self.model_target = OthelloDQNModel(nb_observations, self.action_dim,
+                                            self.learning_rate).build_model()  # this is the target network
+        # performance profiling
+        # self.cprof = cprofile.Profile()
+
+    @staticmethod
+    def set_env_seeds(seed=SEED):
+        """
+        sets the seed value so that we can reproduce the results constantly
+        :param seed:
+        :return:
+        """
+        os.environ['PYTHONHASHSEED'] = str(seed)
+        random.seed(seed)
+        tf.random.set_seed(seed)
+        np.random.seed(seed)
+
+    def set_global_determinism(self, seed=SEED):
+        """
+        sets tensorflow specific deterministic parameters for reproducibility
+        :param seed:
+        :return:
+        """
+        self.set_env_seeds(seed=seed)
+        os.environ['TF_DETERMINISTIC_OPS'] = '1'
+        os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
+
+    # def build_model(self, nb_observations):
+    #     """
+    #     build DQN model
+    #     :param nb_observations: no. of observations from the game board
+    #     :return: DQN model
+    #     """
+    #     def root_mean_squared_log_error(y_true, y_pred):
+    #         msle = tf.keras.losses.MeanSquaredLogarithmicError()
+    #         return K.sqrt(msle(y_true, y_pred))
+    #
+    #     def root_mean_squared_error(y_true, y_pred):
+    #         mse = tf.keras.losses.MeanSquaredError()
+    #         return K.sqrt(mse(y_true, y_pred))
+    #
+    #     _model = tf.keras.Sequential([
+    #         tf.keras.layers.Dense(64, input_shape=(1, nb_observations), activation="relu"),
+    #         tf.keras.layers.Dense(64, activation="relu"),
+    #
+    #         tf.keras.layers.Dense(64),
+    #         tf.keras.layers.BatchNormalization(),
+    #         tf.keras.layers.LeakyReLU(),
+    #
+    #         tf.keras.layers.Dense(128, activation="relu"),
+    #         tf.keras.layers.Dense(128, activation="relu"),
+    #         tf.keras.layers.Dense(128, activation="relu"),
+    #
+    #         tf.keras.layers.Dense(64),
+    #         tf.keras.layers.BatchNormalization(),
+    #         tf.keras.layers.LeakyReLU(),
+    #
+    #         tf.keras.layers.Dense(64, activation="relu"),
+    #         # tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.softmax)
+    #         tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.linear)
+    #     ])
+    #
+    #     # Model is the full model w/o custom layers
+    #     # _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
+    #
+    #     # for tensorflow-macos 2.11 and tensorflow-metal 0.7.0 need to switch to legacy optimiser SGD because Adam
+    #     # optimiser issues and where a new optimizer API has been implemented where a default JIT compilation flag is
+    #     # set https://developer.apple.com/forums/thread/721619
+    #     _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
+    #                                                             momentum=0.1,
+    #                                                             nesterov=True),
+    #                    loss=tf.keras.losses.MeanSquaredError(),
+    #                    # loss=tf.keras.losses.MeanAbsoluteError(),
+    #                    # loss=root_mean_squared_log_error,
+    #                    # loss=root_mean_squared_error,
+    #                    metrics=['accuracy'])
+    #
+    #     return _model
 
     # @profile(stream=fp)
     def store_transition(self, observation, action, reward, done, next_observation):
@@ -181,6 +263,18 @@ class OthelloDQN:
         # performance profiling
         # self.cprof.disable()
         return action
+
+    # assign weights fromm trained agent into self-play agent
+    # @profile(stream=fp)
+    def assign_weights(self, other: "OthelloDQN"):
+        """
+        accept weights from the other (white) player where the weights from the trained agent will be copied and this
+        agent will be used for self-play training
+        :param other: trained agent from which the weights are to be copied from
+        :return:
+        """
+        if self.player == "other":
+            self.model_target.set_weights(other.model_eval.get_weights())
 
     # sync between mode and target_model
     # @profile(stream=fp)
@@ -350,3 +444,4 @@ class OthelloDQN:
             error_str = str(ve)
             print(error_str)
             return False, "Failed to load agent!"
+

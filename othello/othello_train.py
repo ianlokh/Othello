@@ -1,16 +1,20 @@
-import sys
 import os
 import gc
 import importlib
 import numpy as np
+import pandas as pd
 import random
 import copy
 import pstats
-from datetime import datetime
 
-# import gym
+from datetime import datetime
+from matplotlib import pyplot as plt
+
 import gymnasium as gym
 import tensorflow as tf
+
+from os import sys, path
+sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 
 # setting this to ensure that we can reproduce the results
 tf.config.threading.set_inter_op_parallelism_threads(1)
@@ -34,6 +38,11 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # import othello
 from othello import othello_agent
+
+# update inputs
+from othello.argparser import ParserOutput
+
+parser = ParserOutput()
 
 
 # @profile(stream=fp)
@@ -64,8 +73,13 @@ print(num_observations, num_actions)
 
 importlib.reload(sys.modules.get('othello.othello_agent'))
 
+# instantiate agents
 agent_white = othello_agent.OthelloDQN(nb_observations=64, player="white")
 # agent_white.model_target.summary()
+
+# if train mode is self-play then instantiate another agent for playing against
+if parser.train_mode == 'self-play':
+    agent_other = othello_agent.OthelloDQN(nb_observations=64, player="other")
 
 
 # @profile(stream=fp)
@@ -74,6 +88,7 @@ def train():
     global winning_rate
     global best_winning_rate
     global reward_history
+    global epoch_win_rate_log
 
     ep_reward = []
     observation, info = env.reset()
@@ -96,8 +111,11 @@ def train():
 
             ep_reward.append(reward)
         else:
-            action = random.choice(list(next_possible_actions))
-            action = (action[0] * 8) + action[1]
+            if parser.train_mode == 'self-play':
+                action = agent_other.choose_action(observation, next_possible_actions)
+            else:
+                action = random.choice(list(next_possible_actions))
+                action = (action[0] * 8) + action[1]
 
             next_observation, reward, done, truncated, info = env.step(action)
             next_observation = next_observation["state"].reshape((1, 64))
@@ -124,28 +142,38 @@ def train():
     # this is reward_history for white
     reward_history.append(np.sum(ep_reward))
 
-    if (epoch % 50 == 0) and (epoch > 1):  # log winning rate in every 50 eps
+    # if training mode is self-play then assign training weights to opponent agent
+    if (epoch % epoch_win_rate_log == 0) and (parser.train_mode == 'self-play'):
+        agent_other.assign_weights(agent_white)
+        print("\n***** Assign weights to self-play agent")
+
+    # log the winning rate at every epoch_win_rate_log and clean up objects
+    if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
         winning_rate.append((epoch, np.mean(is_white)))
         is_white = []
-        print("\n***** Epoch: {:d}/{:d}, white player winning rate in latest 30 rounds: {:.2%}. *****\n".format(epoch, EPOCHS, winning_rate[-1][1]))
-
+        print("\n***** Epoch: {:d}/{:d}, white player winning rate in last {:d} rounds: {:.2%}. *****".format(epoch,
+                                                                                                                EPOCHS,
+                                                                                                                epoch_win_rate_log,
+                                                                                                                winning_rate[-1][1]))
+        # if better winning_rate is found then checkpoint and save model
         if winning_rate[-1][1] >= best_winning_rate:
             agent_white.save_model(name="OthelloDQN")
-            print("\n***** Save model at Epoch: {:d}/{:d}\n".format(epoch, EPOCHS))
+            print("\n***** Save model at Epoch: {:d}/{:d}".format(epoch, EPOCHS))
             best_winning_rate = winning_rate[-1][1]
 
         # memory cleanup
         n = gc.collect()
-        print("\nNumber of unreachable objects collected by GC:", n, "\n")
+        print("\nNumber of unreachable objects collected by GC:{:d}".format(n))
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    EPOCHS = 40000
+    EPOCHS = 60000
     is_white = []
     reward_history = []
     winning_rate = []
     best_winning_rate = 0
+    epoch_win_rate_log = 50
 
     for epoch in range(EPOCHS):
         train()
@@ -171,5 +199,14 @@ if __name__ == '__main__':
         winning_rate = np.load(file)
         # close the file
         file.close()
+        # convert to dataframe
+        win_rate_df = pd.DataFrame(winning_rate)
+        win_rate_df.rename({0: 'epochs', 1: 'win_rate'}, axis=1, inplace=True)
+        win_rate_df['mean'] = win_rate_df['win_rate'].rolling(window=10).mean()
+
+        fig, ax = plt.subplots(1, 1)
+        win_rate_df.plot(x='epochs', y='win_rate', figsize=(8, 4), ax=ax)
+        win_rate_df.plot(x='epochs', y='mean', figsize=(8, 4), ax=ax)
+        fig.savefig(path + "winning_rate_{:s}.png".format(curr_date), dpi=300)
 
     print(winning_rate)
