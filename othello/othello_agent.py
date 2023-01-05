@@ -10,6 +10,8 @@ import tensorflow.keras.backend as K
 
 from scipy.special import softmax
 
+from othello import config as cfg
+
 # for performance profiling
 # import cProfile as cprofile
 # from memory_profiler import profile
@@ -95,16 +97,16 @@ class OthelloDQN:
         self.action_dim = 64
         self.state_dim = 64
 
-        self.gamma = 0.95  # reward decay rate
-        self.alpha1 = 0.1  # soft copy weights from white to black, alpha1 updates while (1-alpha1) remains
-        self.alpha2 = 0.45  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
-        self.epsilon_reduce = 0.99975  # 0.995, 0.9995, 0.99975
-        self.epsilon = 1.0
+        self.gamma = cfg.agent_setting.GAMMA  # reward decay rate
+        self.alpha1 = cfg.agent_setting.ALPHA1  # soft copy weights for self-play, alpha1 updates while (1-alpha1) remains
+        self.alpha2 = cfg.agent_setting.ALPHA2  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
+        self.epsilon_reduce = 0.9999  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
+        self.epsilon = cfg.agent_setting.EPSILON  # epsilon parameter for epsilon greedy selection
 
         # q network learning parameters
-        self.learning_rate = 0.0005  # 0.001, 0.0005, 0.0001
-        self.batch_size = 128  # 128, 256, 512, 768, 1024, 2048
-        self.training_epochs = 50  # 15, 20, 50, 100
+        self.learning_rate = cfg.agent_setting.LEARNING_RATE  # 0.001, 0.0005, 0.0001
+        self.batch_size = cfg.agent_setting.BATCH_SIZE  # 128, 256, 512, 768, 1024, 2048
+        self.training_epochs = cfg.agent_setting.TRAINING_EPOCHS  # 15, 20, 50, 100
 
         # total learning step - count how many times the eval net has been updated, used to set a basis for updating
         # the target net
@@ -112,7 +114,7 @@ class OthelloDQN:
         self.replace_target_iter = 75  # 10, 50, 75, 100, 150
 
         # replay buffer settings
-        self.replay_buffer_size = 75000  # 20000, 40000, 75000
+        self.replay_buffer_size = cfg.agent_setting.REPLAY_BUFFER_SIZE  # 20000, 40000, 75000, 150000
         self.replay_buffer = deque(maxlen=self.replay_buffer_size)
 
         # define the q network
@@ -275,6 +277,7 @@ class OthelloDQN:
         """
         if self.player == "other":
             self.model_target.set_weights(other.model_eval.get_weights())
+            # print('Update weights from another agent')
 
     # sync between mode and target_model
     # @profile(stream=fp)
@@ -301,7 +304,7 @@ class OthelloDQN:
             #                                   np.multiply(model_layer.get_weights()[1], self.alpha2) +
             #                                   np.multiply(target_layer.get_weights()[1], (1 - self.alpha2))])
 
-            print('\nUpdate target_model weights\n')
+            print('\nUpdate target_model weights')
         elif self.player == "black":
             pass
 
@@ -397,23 +400,13 @@ class OthelloDQN:
             self.replay_buffer.pop()
             self.replay_buffer.append(obs)
 
-    def weights_assign(self, another: 'OthelloDQN'):
-        """
-        accept training weights from the white player
-        :param another:
-        :return:
-        """
-        if self.player == "black":
-            self.model_eval.set_weights(another.model_eval.get_weights())
-            print('Update weights from another agent')
-
-    def save_model(self, name="OthelloDQN"):
+    def save_model(self, name="OthelloDQN", save_step='training'):
         """
         saves weights and model
         :return:
         """
-        self.model_eval.save_weights("./models/{0}_{1}.{2}".format(name, "weights", "h5f"), overwrite=True)
-        self.model_eval.save("./models/{0}_{1}.{2}".format(name, "model", "h5"))
+        self.model_eval.save_weights("./models/{0}/{1}_{2}.{3}".format(save_step, name, "weights", "h5f"), overwrite=True)
+        self.model_eval.save("./models/{0}/{1}_{2}.{3}".format(save_step, name, "model", "h5"))
 
     def load_model(self, path="", name="OthelloDQN", format_type="model"):
         """

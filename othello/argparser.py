@@ -22,6 +22,9 @@ def _parse_args():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--train_mode", default='random', choices=['random', 'self-play'], type=str, metavar='',
                         help="RL training mode. Valid options are 'random', 'self-play'")
+    # for evaluation run
+    parser.add_argument("--eval_model_dir", default='.', type=str, metavar='',
+                        help="Eval models directory")
 
     return parser.parse_args()
 
@@ -53,3 +56,4 @@ class ParserOutput:
 
         # Custom
         self.train_mode = args.train_mode
+        self.eval_model_dir = args.eval_model_dir

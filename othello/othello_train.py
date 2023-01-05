@@ -38,8 +38,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # import othello
 from othello import othello_agent
+from othello import config as cfg
 
-# update inputs
+# command line parsing
 from othello.argparser import ParserOutput
 
 parser = ParserOutput()
@@ -89,6 +90,7 @@ def train():
     global best_winning_rate
     global reward_history
     global epoch_win_rate_log
+    global self_play_update_rate
 
     ep_reward = []
     observation, info = env.reset()
@@ -143,7 +145,7 @@ def train():
     reward_history.append(np.sum(ep_reward))
 
     # if training mode is self-play then assign training weights to opponent agent
-    if (epoch % epoch_win_rate_log == 0) and (parser.train_mode == 'self-play'):
+    if (epoch % self_play_update_rate == 0) and (parser.train_mode == 'self-play'):
         agent_other.assign_weights(agent_white)
         print("\n***** Assign weights to self-play agent")
 
@@ -157,7 +159,7 @@ def train():
                                                                                                                 winning_rate[-1][1]))
         # if better winning_rate is found then checkpoint and save model
         if winning_rate[-1][1] >= best_winning_rate:
-            agent_white.save_model(name="OthelloDQN")
+            agent_white.save_model(name="OthelloDQN", save_step="training")
             print("\n***** Save model at Epoch: {:d}/{:d}".format(epoch, EPOCHS))
             best_winning_rate = winning_rate[-1][1]
 
@@ -168,15 +170,19 @@ def train():
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    EPOCHS = 60000
+    EPOCHS = cfg.training_param.EPOCHS
     is_white = []
     reward_history = []
     winning_rate = []
     best_winning_rate = 0
-    epoch_win_rate_log = 50
+    epoch_win_rate_log = cfg.training_param.EPOCH_WIN_RATE_LOG
+    self_play_update_rate = cfg.training_param.SELF_PLAY_UPDATE_LOG
 
     for epoch in range(EPOCHS):
         train()
+
+    # save final model after training is done
+    agent_white.save_model(name="OthelloDQN", save_step="final")
 
     # save winning rate file
     curr_date = datetime.now().strftime("%Y_%m_%d")
@@ -205,6 +211,7 @@ if __name__ == '__main__':
         win_rate_df['mean'] = win_rate_df['win_rate'].rolling(window=10).mean()
 
         fig, ax = plt.subplots(1, 1)
+        ax.set_ylim([0, 1])
         win_rate_df.plot(x='epochs', y='win_rate', figsize=(8, 4), ax=ax)
         win_rate_df.plot(x='epochs', y='mean', figsize=(8, 4), ax=ax)
         fig.savefig(path + "winning_rate_{:s}.png".format(curr_date), dpi=300)
