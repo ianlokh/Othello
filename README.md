@@ -55,6 +55,7 @@ To play the game, run the command
 ```
 python othello_main.py
 ```
+Note: Gymnasium is not required to play the game as the UI and board logic is already part of othello_main.py
 
 ## Source Files
 
@@ -74,7 +75,7 @@ def step(self):
 	...
 ```
 
-You can refer to <https://www.gymlibrary.dev/content/environment_creation/> for information on how to structure your environment class.
+You can refer to <https://gymnasium.farama.org/tutorials/environment_creation/> for information on how to structure your environment class.
 
 
 **othello_agent.py**
