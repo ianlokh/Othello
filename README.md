@@ -23,7 +23,10 @@ pip install -U "gymnasium[atari]"
 pip install -U "gymnasium[all]"
 pip install -U "autorom[accept-rom-license]"
 ```
-
+If you encounter issues with gymnasium you can try
+```commandline=console
+pip install -q swig
+```
 ## keras-rl2 Installation
 keras-rl2 implements deep reinforcement learning algorithms in Python and seamlessly integrates with the deep learning library Keras. 
 Installation of keras-rl2 is optional. For the original repo please refer to https://github.com/taylormcnally/keras-rl2.git

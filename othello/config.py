@@ -14,9 +14,10 @@ class agent_setting:
 
     # q network learning parameters
     LEARNING_RATE = 0.0001  # 0.001, 0.0005, 0.0001
-    BATCH_SIZE = 1024  # 128, 256, 512, 768, 1024, 2048
+    BATCH_SIZE = 2048  # 128, 256, 512, 768, 1024, 2048
     # 20230105 - 512
-    # 202301XX - 1024
+    # 20230111 - 1024
+    # 202301XX - 2048
     TRAINING_EPOCHS = 50  # 15, 20, 50, 100
 
     # total learning step - count how many times the eval net has been updated, used to set a basis for updating

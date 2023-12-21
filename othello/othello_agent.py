@@ -19,8 +19,6 @@ from othello import config as cfg
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-SEED = 42
-
 
 class OthelloDQNModel:
     """
@@ -71,9 +69,11 @@ class OthelloDQNModel:
         # for tensorflow-macos 2.11 and tensorflow-metal 0.7.0 need to switch to legacy optimiser SGD because Adam
         # optimiser issues and where a new optimizer API has been implemented where a default JIT compilation flag is
         # set https://developer.apple.com/forums/thread/721619
-        _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
-                                                                momentum=0.1,
-                                                                nesterov=True),
+
+        # _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
+        #                                                         momentum=0.1,
+        #                                                         nesterov=True),
+        _model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=self.learning_rate),
                        loss=tf.keras.losses.MeanSquaredError(),
                        # loss=tf.keras.losses.MeanAbsoluteError(),
                        # loss=root_mean_squared_log_error,
@@ -88,10 +88,11 @@ class OthelloDQN:
     Class for the OthelloDQN object
     """
 
-    def __init__(self, nb_observations, player="white"):
+    def __init__(self, nb_observations, player="white", mode="training", seed=42):
 
-        self.set_global_determinism(seed=SEED)
+        self.set_global_determinism(seed=seed)
 
+        self.mode = mode
         self.player = player
 
         self.action_dim = 64
@@ -101,7 +102,11 @@ class OthelloDQN:
         self.alpha1 = cfg.agent_setting.ALPHA1  # soft copy weights for self-play, alpha1 updates while (1-alpha1) remains
         self.alpha2 = cfg.agent_setting.ALPHA2  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
         self.epsilon_reduce = 0.9999  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
-        self.epsilon = cfg.agent_setting.EPSILON  # epsilon parameter for epsilon greedy selection
+
+        if self.mode == "training":
+            self.epsilon = cfg.agent_setting.EPSILON  # epsilon parameter for epsilon greedy selection training
+        else:
+            self.epsilon = 0  # will not train
 
         # q network learning parameters
         self.learning_rate = cfg.agent_setting.LEARNING_RATE  # 0.001, 0.0005, 0.0001
@@ -117,7 +122,7 @@ class OthelloDQN:
         self.replay_buffer_size = cfg.agent_setting.REPLAY_BUFFER_SIZE  # 20000, 40000, 75000, 150000
         self.replay_buffer = deque(maxlen=self.replay_buffer_size)
 
-        # define the q network
+        # specify the q network path
         self.model_full_path = "./models/"
 
         # only white player learns hence q network will only be created for white player
@@ -135,7 +140,7 @@ class OthelloDQN:
         # self.cprof = cprofile.Profile()
 
     @staticmethod
-    def set_env_seeds(seed=SEED):
+    def set_env_seeds(seed):
         """
         sets the seed value so that we can reproduce the results constantly
         :param seed:
@@ -145,8 +150,9 @@ class OthelloDQN:
         random.seed(seed)
         tf.random.set_seed(seed)
         np.random.seed(seed)
+        print("Seed:{:d}".format(seed))
 
-    def set_global_determinism(self, seed=SEED):
+    def set_global_determinism(self, seed):
         """
         sets tensorflow specific deterministic parameters for reproducibility
         :param seed:
@@ -155,58 +161,6 @@ class OthelloDQN:
         self.set_env_seeds(seed=seed)
         os.environ['TF_DETERMINISTIC_OPS'] = '1'
         os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
-
-    # def build_model(self, nb_observations):
-    #     """
-    #     build DQN model
-    #     :param nb_observations: no. of observations from the game board
-    #     :return: DQN model
-    #     """
-    #     def root_mean_squared_log_error(y_true, y_pred):
-    #         msle = tf.keras.losses.MeanSquaredLogarithmicError()
-    #         return K.sqrt(msle(y_true, y_pred))
-    #
-    #     def root_mean_squared_error(y_true, y_pred):
-    #         mse = tf.keras.losses.MeanSquaredError()
-    #         return K.sqrt(mse(y_true, y_pred))
-    #
-    #     _model = tf.keras.Sequential([
-    #         tf.keras.layers.Dense(64, input_shape=(1, nb_observations), activation="relu"),
-    #         tf.keras.layers.Dense(64, activation="relu"),
-    #
-    #         tf.keras.layers.Dense(64),
-    #         tf.keras.layers.BatchNormalization(),
-    #         tf.keras.layers.LeakyReLU(),
-    #
-    #         tf.keras.layers.Dense(128, activation="relu"),
-    #         tf.keras.layers.Dense(128, activation="relu"),
-    #         tf.keras.layers.Dense(128, activation="relu"),
-    #
-    #         tf.keras.layers.Dense(64),
-    #         tf.keras.layers.BatchNormalization(),
-    #         tf.keras.layers.LeakyReLU(),
-    #
-    #         tf.keras.layers.Dense(64, activation="relu"),
-    #         # tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.softmax)
-    #         tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.linear)
-    #     ])
-    #
-    #     # Model is the full model w/o custom layers
-    #     # _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
-    #
-    #     # for tensorflow-macos 2.11 and tensorflow-metal 0.7.0 need to switch to legacy optimiser SGD because Adam
-    #     # optimiser issues and where a new optimizer API has been implemented where a default JIT compilation flag is
-    #     # set https://developer.apple.com/forums/thread/721619
-    #     _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
-    #                                                             momentum=0.1,
-    #                                                             nesterov=True),
-    #                    loss=tf.keras.losses.MeanSquaredError(),
-    #                    # loss=tf.keras.losses.MeanAbsoluteError(),
-    #                    # loss=root_mean_squared_log_error,
-    #                    # loss=root_mean_squared_error,
-    #                    metrics=['accuracy'])
-    #
-    #     return _model
 
     # @profile(stream=fp)
     def store_transition(self, observation, action, reward, done, next_observation):
@@ -290,8 +244,16 @@ class OthelloDQN:
         if self.player == "white":
             # self.model_target.set_weights(self.model_eval.get_weights())
 
-            self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha2, dtype=object) +
-                                          np.multiply(self.model_target.get_weights(), (1 - self.alpha2), dtype=object))
+            # self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha2, dtype=object) +
+            #                               np.multiply(self.model_target.get_weights(), (1 - self.alpha2), dtype=object))
+
+            # np.multiply doesn't work on jagged arrays in 1.26.2
+            computed_weights = []
+            for t, e in zip(self.model_target.get_weights(), self.model_eval.get_weights()):
+                computed_weight = t * (1 - self.alpha2) + e * self.alpha2
+                computed_weights.append(computed_weight)
+
+            self.model_target.set_weights(computed_weights)
 
             # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
             #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)
@@ -421,16 +383,10 @@ class OthelloDQN:
                 print("{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
                 self.model_eval = tf.keras.models.load_model("{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
                 self.model_full_path = "{0}/{1}_{2}.{3}".format(path, name, "model", "h5")
-                # print("./models/{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
-                # self.model_eval = tf.keras.models.load_model("./models/{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
-                # self.model_full_path = "./models/{0}/{1}_{2}.{3}".format(path, name, "model", "h5")
             elif format_type == "weights":
                 print("{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
                 self.model_eval.load_weights("{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
                 self.model_full_path = "{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f")
-                # print("./models/{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
-                # self.model_eval.load_weights("./models/{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
-                # self.model_full_path = "./models/{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f")
 
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
         except ValueError as ve:
@@ -438,3 +394,24 @@ class OthelloDQN:
             print(error_str)
             return False, "Failed to load agent!"
 
+    def reload_model(self, path=None):
+        """
+        reloads previously selected weights and model
+        :return:
+        """
+        # if no new model specified then use previously loaded model
+        if path is None:
+            path = self.model_full_path
+
+        # check that the model exists
+        if not os.path.exists(path):
+            sys.exit("cannot load %s" % path)
+
+        # load model
+        try:
+            self.model_eval = tf.keras.models.load_model(self.model_full_path)
+            return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
+        except (ValueError, OSError) as ve:
+            error_str = str(ve)
+            print(error_str)
+            return False, "Failed to load agent!"

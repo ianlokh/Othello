@@ -8,6 +8,9 @@ import sys
 import os
 import numpy as np
 
+from numpy import random
+from numpy.random import Generator, PCG64
+
 import tkinter as tk
 from tkinter import *
 from tkinter import messagebox, filedialog
@@ -77,7 +80,7 @@ class Othello:
 
         # rl agent variables
         self.game_mode = None
-        self.rl_agent = othello_agent.OthelloDQN(nb_observations=64, player="white")
+        self.rl_agent = None
 
         # reset game environment
         self.reset()
@@ -211,6 +214,18 @@ class Othello:
         self.next_player = white_player
         self.next_possible_actions = self.get_valid_board_pos(self.curr_player)
 
+        # instantiate rl_agent and reload model if previously loaded to ensure a level of randomness in the
+        # starting play even as the model is the same
+        if self.rl_agent is not None:
+            prev_model_path = self.rl_agent.model_full_path
+        else:
+            prev_model_path = None
+        # instantiate new agent in play mode
+        self.rl_agent = othello_agent.OthelloDQN(nb_observations=64, player="white", mode="play",
+                                                 seed=int(PCG64().random_raw()*100/PCG64().random_raw()))
+        # reload model weights
+        self.rl_agent.reload_model(path=prev_model_path)
+
         print("Game Reset.")
 
     def load_rl_agent(self, model_dir="./model"):
@@ -280,7 +295,8 @@ class Othello:
 
         if btn_type == "ok_message":
             ok_button = Button(button_frame, text="OK", width=btn_width, height=btn_height, command=pop.destroy)
-            ok_button.pack(in_=button_frame, side="bottom", pady=20)
+            # ok_button.pack(in_=button_frame, side="bottom", pady=20)
+            ok_button.grid(row=0, column=1, sticky=S, padx=10, pady=20)
 
         elif btn_type == "done_replay":
             done_button = Button(button_frame, text="Done", width=btn_width, height=btn_height,
@@ -293,9 +309,6 @@ class Othello:
             # replay_button.pack(in_=bottom, side="right", pady=5)
             replay_button.grid(row=0, column=1, sticky=E, padx=10, pady=20)
 
-            button_frame.grid_rowconfigure(0, weight=1)
-            button_frame.grid_columnconfigure(1, weight=1)
-
         elif btn_type == "human_agent":
             human_button = Button(button_frame, text="Human", width=btn_width, height=btn_height,
                                   command=lambda: [set_game_mode("human"), pop.destroy()])
@@ -305,8 +318,8 @@ class Othello:
                                   command=lambda: [set_game_mode("agent"), pop.destroy()])
             agent_button.grid(row=0, column=1, sticky=E, padx=10, pady=20)
 
-            button_frame.grid_rowconfigure(0, weight=1)
-            button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid_rowconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
 
         self.root.wait_window(pop)
 
