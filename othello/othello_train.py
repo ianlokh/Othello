@@ -9,6 +9,7 @@ import pstats
 
 from datetime import datetime
 from matplotlib import pyplot as plt
+from typing import Any
 
 import gymnasium as gym
 import tensorflow as tf
@@ -48,6 +49,10 @@ parser = ParserOutput()
 
 # @profile(stream=fp)
 def set_gpu(gpu_ids_list):
+    """
+    :param gpu_ids_list:
+    :return:
+    """
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
         try:
@@ -84,16 +89,22 @@ if parser.train_mode == 'self-play':
 
 
 # @profile(stream=fp)
-def train():
-    global is_white
+def train(curr_epoch: int):
+    """
+    :param curr_epoch:
+    :return:
+    """
+    global agent_win
     global winning_rate
     global best_winning_rate
-    global reward_history
+    # global reward_history
     global epoch_win_rate_log
+    global epoch_win_rate_log_msg
     global self_play_update_rate
+    global env_params
 
-    ep_reward = []
-    observation, info = env.reset()
+    ep_reward: list[int] = []
+    observation, info = env.reset(options=env_params)
     observation = observation["state"].reshape((1, 64))
 
     done = False
@@ -139,10 +150,10 @@ def train():
 
     if done:
         agent_white.learn()  # train agent after each trial
-        is_white.append(True if info["winner"] == "White" else False)
+        agent_win.append(True if info["winner"] == "White" else False)
 
     # this is reward_history for white
-    reward_history.append(np.sum(ep_reward))
+    # reward_history.append(np.sum(ep_reward))
 
     # if training mode is self-play then assign training weights to opponent agent
     if (epoch % self_play_update_rate == 0) and (parser.train_mode == 'self-play'):
@@ -151,12 +162,12 @@ def train():
 
     # log the winning rate at every epoch_win_rate_log and clean up objects
     if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
-        winning_rate.append((epoch, np.mean(is_white)))
-        is_white = []
-        print("\n***** Epoch: {:d}/{:d}, white player winning rate in last {:d} rounds: {:.2%}. *****".format(epoch,
-                                                                                                                EPOCHS,
-                                                                                                                epoch_win_rate_log,
-                                                                                                                winning_rate[-1][1]))
+        winning_rate.append((epoch, np.mean(agent_win)))
+        agent_win = [] # clear array to calculate the rate of win for each epoch
+        epoch_win_rate_log_msg = "Epoch: {:d}/{:d}, white player winning rate in last {:d} rounds: {:.2%}.".format(epoch, EPOCHS, epoch_win_rate_log, winning_rate[-1][1])
+        env_params["display_message"] = epoch_win_rate_log_msg
+        print("\n*****", epoch_win_rate_log_msg, "*****")
+
         # if better winning_rate is found then checkpoint and save model
         if winning_rate[-1][1] >= best_winning_rate:
             agent_white.save_model(name="OthelloDQN", save_step="training")
@@ -171,15 +182,20 @@ def train():
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     EPOCHS = cfg.training_param.EPOCHS
-    is_white = []
-    reward_history = []
+    agent_win = []
     winning_rate = []
     best_winning_rate = 0
+    # reward_history = []
     epoch_win_rate_log = cfg.training_param.EPOCH_WIN_RATE_LOG
     self_play_update_rate = cfg.training_param.SELF_PLAY_UPDATE_LOG
+    epoch_win_rate_log_msg = ""
+    env_params = {
+        "display_message": ""
+    }
 
+    # train for no. of epochs
     for epoch in range(EPOCHS):
-        train()
+        train(epoch)
 
     # save final model after training is done
     agent_white.save_model(name="OthelloDQN", save_step="final")
@@ -197,7 +213,7 @@ if __name__ == '__main__':
         # save array to the file
         np.save(file, winning_rate)
         # close the file
-        file.close
+        file.close()
 
     # open the file in read binary mode
     with open(path + "winning_rate_{:s}".format(curr_date), "rb") as file:

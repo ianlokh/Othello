@@ -47,14 +47,19 @@ class OthelloEnv(gym.Env):
         self.token = None
         self.cross = None
         self.instruction = None
+        self.message_line = None
         self.score = None
         self.window = None
 
+        # game board variables
         self.player_pos_list = None
         self.game_board = None
+        self.message_str = ""  # message to display on the board
+
+        # track winner for each round
         self.winner = None
 
-        # variable for player turn
+        # track player turn
         self.curr_player = None
         self.next_player = None
 
@@ -182,6 +187,12 @@ class OthelloEnv(gym.Env):
             self.score.speed(0)
             self.score.ht()
 
+            # global instance of free text line turtle
+            self.message_line = turtle.Turtle()
+            self.message_line.color("white")
+            self.message_line.speed(0)
+            self.message_line.ht()
+
             # Window Setup - needs to be here so that we can initialise the window, draw and initialise the game board,
             # capture the mouse clicks using window.mainloop()
             self.window = turtle.Screen()
@@ -196,6 +207,7 @@ class OthelloEnv(gym.Env):
             self.cross.clear()
             self.instruction.clear()
             self.score.clear()
+            self.message_line.clear()
 
         # initialise the board positions
         self.init_board(self.player_pos_list)
@@ -224,6 +236,9 @@ class OthelloEnv(gym.Env):
         self.curr_player = None
         self.next_player = black_player
         self.next_possible_actions = self.get_valid_board_pos(black_player)
+
+        # set internal variables
+        self.message_str = options["display_message"]
 
         observation = self._get_obs()
         info = self._get_info()
@@ -377,6 +392,12 @@ class OthelloEnv(gym.Env):
             self.instruction.penup()
             self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
             self.instruction.write(black_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
+
+            # any messages to be displayed in the environment
+            self.message_line.clear()
+            self.message_line.penup()
+            self.message_line.goto(0, -(self.window.window_height() / 2) + 50)
+            self.message_line.write(self.message_str, align="center", font=("Courier", 16))
 
             # draw valid positions on board
             self.show_valid_board_pos(black_player)
@@ -737,6 +758,12 @@ class OthelloEnv(gym.Env):
             self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
             self.instruction.write(next_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
+        # any messages to be displayed in the environment
+        self.message_line.clear()
+        self.message_line.penup()
+        self.message_line.goto(0, -(self.window.window_height() / 2) + 50)
+        self.message_line.write(self.message_str, align="center", font=("Courier", 16))
+
         # Perform a TurtleScreen update. To be used when tracer is turned off.
         self.window.update()
 
@@ -803,5 +830,8 @@ class OthelloEnv(gym.Env):
 
         self.score.clear()
         self.score.reset()
+
+        self.message_line.clear()
+        self.message_line.reset()
 
         self.window.bye()

@@ -50,9 +50,29 @@ class OthelloDQNModel:
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(),
 
+            # tf.keras.layers.Dense(128, activation="relu"),
+            # tf.keras.layers.Dropout(0.5),
+            # tf.keras.layers.Dense(128, activation="relu"),
+            # tf.keras.layers.Dropout(0.5),
+            # tf.keras.layers.Dense(128, activation="relu"),
+
             tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.ReLU(),
+            tf.keras.layers.Dropout(0.5),
+
             tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.ReLU(),
+            tf.keras.layers.Dropout(0.5),
+
             tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.ReLU(),
+            tf.keras.layers.Dropout(0.5),
 
             tf.keras.layers.Dense(64),
             tf.keras.layers.BatchNormalization(),
@@ -76,9 +96,9 @@ class OthelloDQNModel:
         _model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=self.learning_rate),
                        loss=tf.keras.losses.MeanSquaredError(),
                        # loss=tf.keras.losses.MeanAbsoluteError(),
-                       # loss=root_mean_squared_log_error,
-                       # loss=root_mean_squared_error,
-                       metrics=['accuracy'])
+                       # metrics=['accuracy']
+                       metrics=[tf.keras.metrics.MeanSquaredError()]
+                       )
 
         return _model
 
@@ -277,6 +297,9 @@ class OthelloDQN:
         :return:
         """
         if self.player == "white":  # only white player learns
+            # if the length of the replay_buffer is not equal to the batch size then exit learning. This is because
+            # during training, we would sample BATCH_SIZE from the replay buffer. So we need to ensure that the
+            # replay_buffer size is > than BATCH_SIZE before we do training
             if len(self.replay_buffer) < self.batch_size:
                 return
 

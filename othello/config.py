@@ -30,7 +30,6 @@ class agent_setting:
 
 
 class training_param:
-
     EPOCHS = 100000
     EPOCH_WIN_RATE_LOG = 50
     SELF_PLAY_UPDATE_LOG = 150

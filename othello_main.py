@@ -803,12 +803,14 @@ class Othello:
         self.score.hideturtle()
 
         self.score.penup()
-        self.score.goto(0, -(self.window.window_height() / 2) + 700)
+        # self.score.goto(0, -(self.window.window_height() / 2) + 700)
+        self.score.goto(0, (self.window.window_height() / 2) - 100)
         self.score.write(white_player['label'] + " score:" + str(white_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
         self.score.penup()
-        self.score.goto(0, -(self.window.window_height() / 2) + 670)
+        # self.score.goto(0, -(self.window.window_height() / 2) + 670)
+        self.score.goto(0, (self.window.window_height() / 2) - 130)
         self.score.write(black_player['label'] + " score:" + str(black_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
