@@ -8,7 +8,6 @@ import sys
 import os
 import numpy as np
 
-from numpy import random
 from numpy.random import Generator, PCG64
 
 import tkinter as tk
@@ -573,6 +572,7 @@ class Othello:
     def check_board_pos(self, x_ind, y_ind, player):
         """
         checks the x_ind, y_ind position if it is a valid position on the board
+        :param player:
         :param x_ind:
         :param y_ind:
         :return: True if valid, False if invalid position

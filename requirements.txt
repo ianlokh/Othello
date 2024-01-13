@@ -4,3 +4,5 @@ setuptools>=61.2.0
 scipy
 pandas
 memory-profiler
+matplotlib
+# tensorflow (to install tensorflow-metal instead)
