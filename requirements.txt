@@ -5,4 +5,6 @@ scipy
 pandas
 memory-profiler
 matplotlib
-# tensorflow (to install tensorflow-metal instead)
+scikit-learn
+tensorflow==2.15 #to install as tensorflow-metal
+tensorflow-metal==1.1.0 #to install as tensorflow-metal

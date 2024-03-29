@@ -8,6 +8,7 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 
 from scipy.special import softmax
+from sklearn.utils import shuffle
 
 from othello import config as cfg
 
@@ -95,8 +96,8 @@ class OthelloDQNModel:
         _model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=self.learning_rate),
                        loss=tf.keras.losses.MeanSquaredError(),
                        # loss=tf.keras.losses.MeanAbsoluteError(),
-                       # metrics=['accuracy']
-                       metrics=[tf.keras.metrics.MeanSquaredError()]
+                       metrics=['accuracy']
+                       # metrics=[tf.keras.metrics.MeanSquaredError()]
                        )
 
         return _model
@@ -295,6 +296,7 @@ class OthelloDQN:
         trains the DQN model for white player only. model_eval and model_target are synced before training
         :return:
         """
+
         if self.player == "white":  # only white player learns
             # if the length of the replay_buffer is not equal to the batch size then exit learning. This is because
             # during training, we would sample BATCH_SIZE from the replay buffer. So we need to ensure that the
@@ -336,7 +338,7 @@ class OthelloDQN:
                     # input("press to continue")
                 target_batch.append(target)
 
-            # train network
+            # # train network
             # history = self.model_eval.fit(np.array(states), np.array(target_batch),
             #                               epochs=self.training_epochs,
             #                               batch_size=self.batch_size,
@@ -345,6 +347,7 @@ class OthelloDQN:
 
             history = []
             for i in range(self.training_epochs):
+                states, target_batch = shuffle(np.array(states), np.array(target_batch))
                 loss, accuracy = self.model_eval.train_on_batch(np.array(states), np.array(target_batch))
                 history.append((loss, accuracy))
 
@@ -389,7 +392,7 @@ class OthelloDQN:
         saves weights and model
         :return:
         """
-        self.model_eval.save_weights("./models/{0}/{1}_{2}.{3}".format(save_step, name, "weights", "h5f"), overwrite=True)
+        self.model_eval.save_weights("./models/{0}/{1}.{2}.{3}".format(save_step, name, "weights", "h5"), overwrite=True)
         self.model_eval.save("./models/{0}/{1}_{2}.{3}".format(save_step, name, "model", "h5"))
 
     def load_model(self, path="", name="OthelloDQN", format_type="model"):

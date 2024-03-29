@@ -6,7 +6,7 @@ class agent_setting:
     # ACTION_DIM = 64
     # STATE_DIM = 64
 
-    GAMMA = 0.95  # reward decay rate
+    GAMMA = 0.975  # reward decay rate
     ALPHA1 = 0.1  # soft copy weights for self-play, alpha1 updates while (1-alpha1) remains
     ALPHA2 = 0.45  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
     EPSILON_REDUCE = 0.9999  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975

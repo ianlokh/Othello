@@ -26,7 +26,7 @@ tf.get_logger().setLevel('ERROR')
 
 # setting OS variables for Tensorflow
 os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
-os.environ['TF_GPU_THREAD_COUNT'] = '4'  # if not hvd_utils.is_using_hvd() else str(hvd.size())
+os.environ['TF_GPU_THREAD_COUNT'] = '8'  # if not hvd_utils.is_using_hvd() else str(hvd.size())
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Keras RL
@@ -141,7 +141,7 @@ def train(curr_epoch: int):
                     agent_white.reward_transition_update(10)
                 elif info["winner"] == "Black":
                     print("Storing transition for last move by black. ", "Winner:", info["winner"], "Reward:", -10)
-                    agent_white.reward_transition_update(-10)
+                    agent_white.reward_transition_update(-15)
                 elif info["winner"] == "Tie":
                     print("Storing transition for last move by black. ", "Winner:", info["winner"], "Reward:", 2)
                     agent_white.reward_transition_update(2)
