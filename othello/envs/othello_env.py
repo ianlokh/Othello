@@ -13,6 +13,8 @@ from gymnasium import spaces
 # from memory_profiler import profile
 # fp = open("report-env.log", "w+")  # to capture memory profile logs
 
+from othello import config as cfg
+
 # Making the coordinate arrays
 grid_pos = [-150, -100, -50, 0, 50, 100, 150]  # 7 lines = 8 grids
 black_player = {"id": -1, "name": "black", "colour": "#000000", "label": "Player 1 (Black)", "score": 0}
@@ -51,10 +53,16 @@ class OthelloEnv(gym.Env):
         self.score = None
         self.window = None
 
+        # game board coordinates
+        self.board_x1 = None
+        self.board_y1 = None
+        self.board_x2 = None
+        self.board_y2 = None
+
         # game board variables
         self.player_pos_list = None
         self.game_board = None
-        self.message_str = ""  # message to display on the board
+        self.message_str_line1 = ""  # message to display on the board
 
         # track winner for each round
         self.winner = None
@@ -200,7 +208,7 @@ class OthelloEnv(gym.Env):
             self.window.colormode(255)
 
             # draw the game board once only
-            self.draw_board(grid_pos, self.outer, self.inner, self.grid)
+            self.board_x1, self.board_y1, self.board_x2, self.board_y2 = self.draw_board(grid_pos, self.outer, self.inner, self.grid)
         else:
             # clear existing turtles
             self.token.clear()
@@ -238,7 +246,7 @@ class OthelloEnv(gym.Env):
         self.next_possible_actions = self.get_valid_board_pos(black_player)
 
         # set internal variables
-        self.message_str = options["display_message"]
+        self.message_str_line1 = options["display_message_line1"]
 
         observation = self._get_obs()
         info = self._get_info()
@@ -287,6 +295,9 @@ class OthelloEnv(gym.Env):
         grid_pos_y = max(_grid_pos) + 50 + border
         grid_length = grid_pos_x + grid_pos_x
 
+        x1, y1 = -grid_pos_x, grid_pos_y
+        x2, y2 = grid_pos_x, grid_pos_y - grid_length
+
         # Making the outer border of the game
         outer.color((255, 255, 255))
         outer.up()
@@ -322,6 +333,8 @@ class OthelloEnv(gym.Env):
             grid.down()
             grid.fd(grid_length - (border * 2))
             grid.rt(90)
+
+        return x1, y1, x2, y2
 
     # draw token
     def draw_token(self, x_ind, y_ind, colour, _pos_list):
@@ -390,14 +403,16 @@ class OthelloEnv(gym.Env):
             # write for next player - first player always black
             self.instruction.clear()
             self.instruction.penup()
-            self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
+            # self.instruction.goto(0, -(self.window.window_height() / 2) + 150)
+            self.instruction.goto(0, self.board_y2 - 50)
             self.instruction.write(black_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
             # any messages to be displayed in the environment
             self.message_line.clear()
             self.message_line.penup()
-            self.message_line.goto(0, -(self.window.window_height() / 2) + 50)
-            self.message_line.write(self.message_str, align="center", font=("Courier", 16))
+            # self.message_line.goto(0, -(self.window.window_height() / 2) + 50)
+            self.message_line.goto(0, self.board_y2 - 100)
+            self.message_line.write(self.message_str_line1, align="center", font=("Courier", 16))
 
             # draw valid positions on board
             self.show_valid_board_pos(black_player)
@@ -738,13 +753,15 @@ class OthelloEnv(gym.Env):
         self.score.clear()
         self.score.penup()
         # self.score.goto(0, -(self.window.window_height() / 2) + 700)
-        self.score.goto(0, (self.window.window_height() / 2) - 100)
+        # self.score.goto(0, (self.window.window_height() / 2) - 120)
+        self.score.goto(0, self.board_y1 + 55)
         self.score.write(white_player['label'] + " score:" + str(white_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
         self.score.penup()
         # self.score.goto(0, -(self.window.window_height() / 2) + 670)
-        self.score.goto(0, (self.window.window_height() / 2) - 130)
+        # self.score.goto(0, (self.window.window_height() / 2) - 150)
+        self.score.goto(0, self.board_y1 + 25)
         self.score.write(black_player['label'] + " score:" + str(black_player['score']), align="center",
                          font=("Courier", 24, "bold"))
 
@@ -755,14 +772,16 @@ class OthelloEnv(gym.Env):
             # write instructions for next player
             self.instruction.clear()
             self.instruction.penup()
-            self.instruction.goto(0, -(self.window.window_height() / 2) + 100)
+            # self.instruction.goto(0, -(self.window.window_height() / 2) + 150)
+            self.instruction.goto(0, self.board_y2 - 50)
             self.instruction.write(next_player['label'] + " To Play", align="center", font=("Courier", 24, "bold"))
 
         # any messages to be displayed in the environment
         self.message_line.clear()
         self.message_line.penup()
-        self.message_line.goto(0, -(self.window.window_height() / 2) + 50)
-        self.message_line.write(self.message_str, align="center", font=("Courier", 16))
+        # self.message_line.goto(0, -(self.window.window_height() / 2) + 50)
+        self.message_line.goto(0, self.board_y2 - 100)
+        self.message_line.write(self.message_str_line1, align="center", font=("Courier", 16))
 
         # Perform a TurtleScreen update. To be used when tracer is turned off.
         self.window.update()
@@ -775,11 +794,11 @@ class OthelloEnv(gym.Env):
                 conclusion += "No winner, ends up a Tie"
             elif _score_black > _score_white:
                 self.winner = "Black"
-                reward += 10 if player == black_player else -10
+                reward += cfg.agent_setting.PENALTY #if player == black_player else cfg.agent_setting.REWARD
                 conclusion += "Winner is Black."
             else:
                 self.winner = "White"
-                reward += 10 if player == white_player else -10
+                reward += cfg.agent_setting.REWARD #if player == white_player else cfg.agent_setting.PENALTY
                 conclusion += "Winner is White."
 
             print(conclusion)

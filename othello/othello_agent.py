@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import copy
 from collections import deque
 
 import numpy as np
@@ -50,37 +51,28 @@ class OthelloDQNModel:
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(),
 
-            # tf.keras.layers.Dense(128, activation="relu"),
-            # tf.keras.layers.Dropout(0.5),
-            # tf.keras.layers.Dense(128, activation="relu"),
-            # tf.keras.layers.Dropout(0.5),
-            # tf.keras.layers.Dense(128, activation="relu"),
-
             tf.keras.layers.Dense(128, activation="relu"),
             tf.keras.layers.Dense(128),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.ReLU(),
-            tf.keras.layers.Dropout(0.5),
-
             tf.keras.layers.Dense(128, activation="relu"),
             tf.keras.layers.Dense(128),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.ReLU(),
-            tf.keras.layers.Dropout(0.5),
-
             tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(128),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.ReLU(),
-            tf.keras.layers.Dropout(0.5),
 
             tf.keras.layers.Dense(64),
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(),
 
             tf.keras.layers.Dense(64, activation="relu"),
+            # don't need softmax here because the subsequent post-processing will do the softmax
             # tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.softmax)
             tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.linear)
+
+            # Notes:
+            # If you are training a binary classifier you can solve the problem with sigmoid activation + binary crossentropy loss.
+            # If you are training a multi-class classifier with multiple classes, then you need softmax activation + crossentropy loss.
+            # If you are training a regressor you need a proper activation function with MSE or MAE loss,
+            # usually.With "proper" I mean linear, in case your output is unbounded, or ReLU in case your output
+            # takes only positive values.These are countless examples.
+
         ])
 
         # Model is the full model w/o custom layers
@@ -93,13 +85,19 @@ class OthelloDQNModel:
         # _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
         #                                                         momentum=0.1,
         #                                                         nesterov=True),
-        _model.compile(optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=self.learning_rate),
+
+        # The following metrics and losses do not work
+        # tf.keras.metrics.sparse_categorical_accuracy
+        # tf.keras.metrics.sparse_categorical_crossentropy
+        # tf.keras.losses.MeanAbsolutePercentageError()
+        _model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=self.learning_rate,
+                                                         momentum=0.05,
+                                                         nesterov=True),
                        loss=tf.keras.losses.MeanSquaredError(),
                        # loss=tf.keras.losses.MeanAbsoluteError(),
-                       metrics=['accuracy']
-                       # metrics=[tf.keras.metrics.MeanSquaredError()]
-                       )
-
+                       # loss=root_mean_squared_log_error,
+                       # loss=root_mean_squared_error,
+                       metrics=['accuracy'])
         return _model
 
 
@@ -153,9 +151,12 @@ class OthelloDQN:
 
         # regardless of training (random or self-play) target network will always be created because this is the network
         # that will be used to predict the action
-        # self.model_target = self.build_model(nb_observations)  # this is the target network
         self.model_target = OthelloDQNModel(nb_observations, self.action_dim,
                                             self.learning_rate).build_model()  # this is the target network
+
+        # array to store the moves made by the agent
+        self.epsilon_plays = []
+
         # performance profiling
         # self.cprof = cprofile.Profile()
 
@@ -223,15 +224,15 @@ class OthelloDQN:
                 # prediction = tf.where(mask, -1e9, prediction)  # same as torch.masked_fill
                 # prediction = tf.nn.softmax(prediction, axis=None, name=None)  # all masked prob equal to 0 after this step
 
-            # prediction = np.ma.array(prediction, mask=mask).filled(fill_value=-1e9)
-            # prediction = softmax(prediction, axis=None)
+            # prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
             prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
 
             # action = tf.argmax(prediction[0], axis=1)
             # action = int(tf.keras.backend.eval(action))
             action = np.argmax(prediction[0], axis=1).item()
 
-            # print("Epsilon:", '%.4f' % self.epsilon, "Agent play:", action)
+            # add the position the agent as decided on
+            self.epsilon_plays.append(action)
         else:
             action = random.choice(list(possible_actions))
             action = (action[0] * 8) + action[1]
@@ -250,8 +251,14 @@ class OthelloDQN:
         :return:
         """
         if self.player == "other":
-            self.model_target.set_weights(other.model_eval.get_weights())
-            # print('Update weights from another agent')
+            # self.model_target.set_weights(other.model_eval.get_weights())
+            computed_weights = []
+            for t, e in zip(self.model_target.get_weights(), other.model_eval.get_weights()):
+                computed_weight = t * (1 - self.alpha1) + e * self.alpha1
+                computed_weights.append(computed_weight)
+
+            self.model_target.set_weights(computed_weights)
+            print('Update weights from another agent for self-play')
 
     # sync between mode and target_model
     # @profile(stream=fp)
@@ -325,16 +332,15 @@ class OthelloDQN:
             for i in range(self.batch_size):
                 q_value = max(q_values[i][0])
                 target = targets[i].copy()
-                # target = copy.deepcopy(targets[i])
-                # print("before count:", i, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
+                # print("before count:", i, "q_value:", q_value,"rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
                 # input("press to continue")
                 if dones[i]:
                     target[0][actions[i]] = rewards[i]
-                    # print("1 after count:", i, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
+                    # print("1 after count:", i, "q_value:", q_value, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
                     # input("press to continue")
                 else:
                     target[0][actions[i]] = rewards[i] + q_value * self.gamma
-                    # print("2 after count:", i, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
+                    # print("2 after count:", i, "q_value:", q_value, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
                     # input("press to continue")
                 target_batch.append(target)
 
@@ -347,9 +353,9 @@ class OthelloDQN:
 
             history = []
             for i in range(self.training_epochs):
-                states, target_batch = shuffle(np.array(states), np.array(target_batch))
-                loss, accuracy = self.model_eval.train_on_batch(np.array(states), np.array(target_batch))
-                history.append((loss, accuracy))
+                # states, target_batch = shuffle(np.array(states), np.array(target_batch))
+                loss, metrics = self.model_eval.train_on_batch(np.array(states), np.array(target_batch))
+                history.append((loss, metrics))
 
             if history is None:
                 pass
@@ -360,7 +366,7 @@ class OthelloDQN:
                       # "Avg. Loss:", '%.4f' % np.mean([round(elem, 4) for elem in history.history['loss']]),
                       # "Avg. Accuracy:", '%.4f' % np.mean([round(elem, 4) for elem in history.history['accuracy']]),
                       "Avg. Loss:", '%.4f' % np.mean([item[0] for item in history if item[0] != 0]),
-                      "Avg. Accuracy:", '%.4f' % np.mean([item[1] for item in history if item[1] != 0]),
+                      "Avg. Metrics:", '%.4f' % np.mean([item[1] for item in history if item[1] != 0]),
                       "\n")
 
             # increment the learning step counter

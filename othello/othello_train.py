@@ -15,6 +15,7 @@ import gymnasium as gym
 import tensorflow as tf
 
 from os import sys, path
+
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 
 # setting this to ensure that we can reproduce the results
@@ -111,6 +112,7 @@ def train(curr_epoch: int):
     while not done:
         next_possible_actions = info["next_possible_actions"]
 
+        # move by white player
         if info["next_player"]["name"] == "white":
             action = agent_white.choose_action(observation, next_possible_actions)
 
@@ -123,7 +125,7 @@ def train(curr_epoch: int):
                 print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
 
             ep_reward.append(reward)
-        else:
+        else:  # move by opponent
             if parser.train_mode == 'self-play':
                 action = agent_other.choose_action(observation, next_possible_actions)
             else:
@@ -137,18 +139,21 @@ def train(curr_epoch: int):
             # previous move by white that lead to the win/loss
             if done:
                 if info["winner"] == "White":
-                    print("Storing transition for last move by black. ", "Winner:", info["winner"], "Reward:", 10)
-                    agent_white.reward_transition_update(10)
+                    print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
+                    agent_white.reward_transition_update(reward)
                 elif info["winner"] == "Black":
-                    print("Storing transition for last move by black. ", "Winner:", info["winner"], "Reward:", -10)
-                    agent_white.reward_transition_update(-15)
+                    print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
+                    agent_white.reward_transition_update(reward)
                 elif info["winner"] == "Tie":
-                    print("Storing transition for last move by black. ", "Winner:", info["winner"], "Reward:", 2)
-                    agent_white.reward_transition_update(2)
+                    print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
+                    agent_white.reward_transition_update(reward)
 
         observation = copy.deepcopy(next_observation)
 
     if done:
+        print("Plays made by agent:", agent_white.epsilon_plays)
+        agent_white.epsilon_plays = []  # reset epsilon plays
+
         agent_white.learn()  # train agent after each trial
         agent_win.append(True if info["winner"] == "White" else False)
 
@@ -163,9 +168,10 @@ def train(curr_epoch: int):
     # log the winning rate at every epoch_win_rate_log and clean up objects
     if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
         winning_rate.append((epoch, np.mean(agent_win)))
-        agent_win = [] # clear array to calculate the rate of win for each epoch
-        epoch_win_rate_log_msg = "Epoch: {:d}/{:d}, white player winning rate in last {:d} rounds: {:.2%}.".format(epoch, EPOCHS, epoch_win_rate_log, winning_rate[-1][1])
-        env_params["display_message"] = epoch_win_rate_log_msg
+        agent_win = []  # clear array to calculate the rate of win for each epoch
+        epoch_win_rate_log_msg = "Epoch: {:d}/{:d}, white player winning rate in last {:d} rounds: {:.2%}.".format(
+            epoch, EPOCHS, epoch_win_rate_log, winning_rate[-1][1])
+        env_params["display_message_line1"] = epoch_win_rate_log_msg
         print("\n*****", epoch_win_rate_log_msg, "*****")
 
         # if better winning_rate is found then checkpoint and save model
@@ -190,7 +196,8 @@ if __name__ == '__main__':
     self_play_update_rate = cfg.training_param.SELF_PLAY_UPDATE_LOG
     epoch_win_rate_log_msg = ""
     env_params = {
-        "display_message": ""
+        "display_message_line1": "",
+        "display_message_line2": ""
     }
 
     # train for no. of epochs
