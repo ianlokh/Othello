@@ -138,15 +138,13 @@ def train(curr_epoch: int):
             # this is to cater for the case when the last move is by the black player, we want to store the
             # previous move by white that lead to the win/loss
             if done:
+                agent_white.reward_transition_update(reward)
                 if info["winner"] == "White":
                     print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
-                    agent_white.reward_transition_update(reward)
                 elif info["winner"] == "Black":
                     print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
-                    agent_white.reward_transition_update(reward)
                 elif info["winner"] == "Tie":
                     print("Storing transition for last move by white. ", "Winner:", info["winner"], "Reward:", reward)
-                    agent_white.reward_transition_update(reward)
 
         observation = copy.deepcopy(next_observation)
 
