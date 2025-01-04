@@ -6,7 +6,7 @@ class agent_setting:
     # ACTION_DIM = 64
     # STATE_DIM = 64
 
-    GAMMA = 0.95  # reward decay rate - 0.975, 0.9975
+    GAMMA = 0.975  # reward decay rate - 0.975, 0.9975
     ALPHA1 = 0.3  # soft copy weights for self-play, alpha1 updates while (1-alpha1) remains
     ALPHA2 = 0.45  # soft copy weights from eval net to target net, alpha2 updates from eval while (1-alpha2) remains for target net
     EPSILON_REDUCE = 0.9999  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
@@ -20,7 +20,7 @@ class agent_setting:
     # total learning step - count how many times the eval net has been updated, used to set a basis for updating
     # the target net
     LEARN_STEP_COUNTER = 0
-    REPLACE_TARGET_ITER = 75  # 10, 50, 75, 100, 150
+    REPLACE_TARGET_ITER = 150  # 10, 50, 75, 100, 150
 
     # replay buffer settings
     REPLAY_BUFFER_SIZE = 200000  # 20000, 40000, 75000, 150000
