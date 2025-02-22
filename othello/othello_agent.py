@@ -1,7 +1,6 @@
 import os
 import random
 import sys
-import copy
 from collections import deque
 
 import numpy as np
@@ -9,7 +8,6 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 
 from scipy.special import softmax
-from sklearn.utils import shuffle
 
 from othello import config as cfg
 
@@ -20,6 +18,71 @@ from othello import config as cfg
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+'''
+import tensorflow as tf
+from tensorflow.keras import layers, models
+
+class OthelloDQNModel:
+    """
+    Class for the deep neural network model with residual blocks.
+    """
+    def __init__(self, nb_observations, action_dim, learning_rate):
+        self.nb_observations = nb_observations
+        self.action_dim = action_dim
+        self.learning_rate = learning_rate
+
+    def residual_block(self, inputs, filters):
+        """
+        Define a residual block with two convolutional layers.
+        
+        :param inputs: Input tensor to the block.
+        :param filters: Number of filters for the convolutions.
+        :return: Output tensor after applying the residual block.
+        """
+        x = layers.Conv2D(filters, (3, 3), padding='same', activation='relu')(inputs)
+        x = layers.BatchNormalization()(x)
+        
+        x = layers.Conv2D(filters, (3, 3), padding='same')(x)  # No activation here
+        x = layers.BatchNormalization()(x)
+        
+        x = layers.Add()([x, inputs])  # Skip connection
+        
+        return layers.Activation('relu')(x)
+
+    def build_model(self):
+        """
+        Build TensorFlow model with residual blocks.
+        
+        :return: TensorFlow model.
+        """
+        inputs = layers.Input(shape=(self.nb_observations, self.nb_observations, 1))
+        
+        x = layers.Conv2D(64, (3, 3), padding='same', activation='relu')(inputs)
+        x = layers.BatchNormalization()(x)
+
+        # Apply a few residual blocks
+        x = self.residual_block(x, 64)
+        x = self.residual_block(x, 64)
+        x = self.residual_block(x, 64)
+
+        x = layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+        x = layers.BatchNormalization()(x)
+        
+        # Flatten the output and add dense layers
+        x = layers.Flatten()(x)
+        x = layers.Dense(64, activation='relu')(x)
+        
+        outputs = layers.Dense(self.action_dim, activation=tf.keras.activations.linear)(x)
+
+        model = models.Model(inputs=inputs, outputs=outputs)
+
+        # Compile the model
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
+                      loss=tf.keras.losses.MeanSquaredError(),
+                      metrics=['accuracy'])
+
+        return model
+'''
 
 class OthelloDQNModel:
     """
@@ -29,6 +92,24 @@ class OthelloDQNModel:
         self.nb_observations = nb_observations
         self.action_dim = action_dim
         self.learning_rate = learning_rate
+
+    def residual_block(self, inputs, filters):
+        """
+        Define a residual block with two convolutional layers.
+
+        :param inputs: Input tensor to the block.
+        :param filters: Number of filters for the convolutions.
+        :return: Output tensor after applying the residual block.
+        """
+        x = layers.Conv2D(filters, (3, 3), padding='same', activation='relu')(inputs)
+        x = layers.BatchNormalization()(x)
+
+        x = layers.Conv2D(filters, (3, 3), padding='same')(x)  # No activation here
+        x = layers.BatchNormalization()(x)
+
+        x = layers.Add()([x, inputs])  # Skip connection
+
+        return layers.Activation('relu')(x)
 
     def build_model(self):
         """
@@ -52,10 +133,11 @@ class OthelloDQNModel:
             tf.keras.layers.LeakyReLU(),
 
             tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(128),
+            tf.keras.layers.Dropout(rate=0.2),
+            # tf.keras.layers.Dense(128),
             tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(128),
-            tf.keras.layers.Dense(128, activation="relu"),
+            # tf.keras.layers.Dense(128),
+            # tf.keras.layers.Dense(128, activation="relu"),
 
             tf.keras.layers.Dense(64),
             tf.keras.layers.BatchNormalization(),
@@ -75,28 +157,19 @@ class OthelloDQNModel:
 
         ])
 
-        # Model is the full model w/o custom layers
-        # _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
-
-        # for tensorflow-macos 2.11 and tensorflow-metal 0.7.0 need to switch to legacy optimiser SGD because Adam
-        # optimiser issues and where a new optimizer API has been implemented where a default JIT compilation flag is
-        # set https://developer.apple.com/forums/thread/721619
-
-        # _model.compile(optimizer=tf.keras.optimizers.legacy.SGD(learning_rate=self.learning_rate,
-        #                                                         momentum=0.1,
-        #                                                         nesterov=True),
-
         # The following metrics and losses do not work
         # tf.keras.metrics.sparse_categorical_accuracy
         # tf.keras.metrics.sparse_categorical_crossentropy
         # tf.keras.losses.MeanAbsolutePercentageError()
-        _model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=self.learning_rate,
-                                                         momentum=0.05,
-                                                         nesterov=True),
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=self.learning_rate,
+            decay_steps=10000,
+            decay_rate=0.96,
+            staircase=True)
+
+        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule,
+                                                          clipnorm=1.0),
                        loss=tf.keras.losses.MeanSquaredError(),
-                       # loss=tf.keras.losses.MeanAbsoluteError(),
-                       # loss=root_mean_squared_log_error,
-                       # loss=root_mean_squared_error,
                        metrics=['accuracy'])
         return _model
 
@@ -224,7 +297,6 @@ class OthelloDQN:
                 # prediction = tf.where(mask, -1e9, prediction)  # same as torch.masked_fill
                 # prediction = tf.nn.softmax(prediction, axis=None, name=None)  # all masked prob equal to 0 after this step
 
-            # prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
             prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
 
             # action = tf.argmax(prediction[0], axis=1)
@@ -268,32 +340,34 @@ class OthelloDQN:
         eval net to target net, alpha2 updates while (1-alpha2) remains
         :return:
         """
+
         if self.player == "white":
-            # self.model_target.set_weights(self.model_eval.get_weights())
+            for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
+                t.assign(t * (1 - self.alpha2) + e * self.alpha2)
+            print('\nUpdated target_model weights')
 
-            # self.model_target.set_weights(np.multiply(self.model_eval.get_weights(), self.alpha2, dtype=object) +
-            #                               np.multiply(self.model_target.get_weights(), (1 - self.alpha2), dtype=object))
-
-            # np.multiply doesn't work on jagged arrays in 1.26.2
-            computed_weights = []
-            for t, e in zip(self.model_target.get_weights(), self.model_eval.get_weights()):
-                computed_weight = t * (1 - self.alpha2) + e * self.alpha2
-                computed_weights.append(computed_weight)
-
-            self.model_target.set_weights(computed_weights)
-
-            # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
-            #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)
-
-            # for model_layer, target_layer in zip(self.model_eval.layers, self.model_target.layers):
-            #     if model_layer.name == "dense":
-            #         # same as layer.set_weights([weights_array, bias_array])
-            #         target_layer.set_weights([np.multiply(model_layer.get_weights()[0], self.alpha2) +
-            #                                   np.multiply(target_layer.get_weights()[0], (1 - self.alpha2)),
-            #                                   np.multiply(model_layer.get_weights()[1], self.alpha2) +
-            #                                   np.multiply(target_layer.get_weights()[1], (1 - self.alpha2))])
-
-            print('\nUpdate target_model weights')
+        # if self.player == "white":
+        #
+        #     # np.multiply doesn't work on jagged arrays in 1.26.2 hence this approach
+        #     computed_weights = []
+        #     for t, e in zip(self.model_target.get_weights(), self.model_eval.get_weights()):
+        #         computed_weight = t * (1 - self.alpha2) + e * self.alpha2
+        #         computed_weights.append(computed_weight)
+        #
+        #     self.model_target.set_weights(computed_weights)
+        #
+        #     # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
+        #     #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)
+        #
+        #     # for model_layer, target_layer in zip(self.model_eval.layers, self.model_target.layers):
+        #     #     if model_layer.name == "dense":
+        #     #         # same as layer.set_weights([weights_array, bias_array])
+        #     #         target_layer.set_weights([np.multiply(model_layer.get_weights()[0], self.alpha2) +
+        #     #                                   np.multiply(target_layer.get_weights()[0], (1 - self.alpha2)),
+        #     #                                   np.multiply(model_layer.get_weights()[1], self.alpha2) +
+        #     #                                   np.multiply(target_layer.get_weights()[1], (1 - self.alpha2))])
+        #
+        #     print('\nUpdate target_model weights')
         elif self.player == "black":
             pass
 

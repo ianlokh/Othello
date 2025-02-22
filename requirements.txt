@@ -1,11 +1,12 @@
-python>=3.11.10
-numpy~=1.26.2
-Gymnasium~=0.29.1
+# python==3.11.11
+numpy
+Gymnasium>=1.0.0
 setuptools>=61.2.0
 scipy
 pandas
 memory-profiler
 matplotlib
 scikit-learn
-tensorflow==2.15 #to install as tensorflow-metal
-tensorflow-metal==1.1.0 #to install as tensorflow-metal
+# tensorflow refer to Apple to install
+# tensorflow-macos
+# tensorflow-metal refer to Apple to install
