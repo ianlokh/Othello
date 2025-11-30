@@ -1,12 +1,12 @@
 # python==3.11.11
 numpy
-Gymnasium>=1.0.0
-setuptools>=61.2.0
+gymnasium>=1.0.0
+setuptools
 scipy
 pandas
 memory-profiler
 matplotlib
 scikit-learn
+pygame-ce
+pygame_gui
 # tensorflow refer to Apple to install
-# tensorflow-macos
-# tensorflow-metal refer to Apple to install

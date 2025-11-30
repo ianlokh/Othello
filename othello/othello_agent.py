@@ -132,12 +132,13 @@ class OthelloDQNModel:
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(),
 
-            tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dropout(rate=0.3),
-            # tf.keras.layers.Dense(128),
-            tf.keras.layers.Dense(128, activation="relu"),
-            # tf.keras.layers.Dense(128),
             # tf.keras.layers.Dense(128, activation="relu"),
+            # tf.keras.layers.Dropout(rate=0.3),
+            # tf.keras.layers.Dense(128, activation="relu"),
+
+            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128, activation="relu"),
 
             tf.keras.layers.Dense(64),
             tf.keras.layers.BatchNormalization(),
@@ -168,7 +169,7 @@ class OthelloDQNModel:
         #     staircase=True)
 
         _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate,
-                                                          clipnorm=1.0),
+                                                          clipnorm=0.5),
                        loss=tf.keras.losses.MeanSquaredError(),
                        metrics=['accuracy'])
         return _model
