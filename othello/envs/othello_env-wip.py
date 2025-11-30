@@ -1,11 +1,18 @@
+import random
+import numpy as np
+import sys, os
+
 import pickle
 import pygame
 import pygame.gfxdraw
 import pygame_gui  # Import pygame_gui
-import sys, os
-
 from pygments.styles.solarized import LIGHT_COLORS
 
+# import gym
+import gymnasium as gym
+from gymnasium import spaces
+
+from othello import config as cfg
 from othello import othello_agent
 
 # Constants
@@ -87,7 +94,6 @@ class Player:
         self.score = 0
         # a set of the possible positions for the player in turn
         self.player_valid_pos = set()
-
 
 # Othello board model class
 class OthelloBoard:
@@ -259,60 +265,9 @@ class OthelloBoard:
     def flatten(self):
         return [cell for row in self.game_board for cell in row]
 
-
-# Viewer class
-class SplashScreen:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
-        self.manager = pygame_gui.UIManager((self.width, self.height))
-        self.background_color = (128, 128, 128)  # Grey
-        self.create_buttons()
-
-    def create_buttons(self):
-        button_width = 200
-        button_height = 50
-        x = (self.width - button_width) // 2
-        y = (self.height - button_height * 2 - 20) // 2
-
-        self.start_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((x, y), (button_width, button_height)),
-            text="Start Game",
-            manager=self.manager
-        )
-
-        self.quit_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((x, y + button_height + 20), (button_width, button_height)),
-            text="Quit",
-            manager=self.manager
-        )
-
-    def handle_events(self, event):
-        if event.type == pygame.USEREVENT:
-            if event.user_type == pygame_gui.UI_BUTTON_PRESSED:
-                if event.ui_element == self.start_button:
-                    return "start_game"
-                elif event.ui_element == self.quit_button:
-                    return "quit"
-        return None
-
-    def resize(self, new_width, new_height):
-        self.width = new_width
-        self.height = new_height
-        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
-        self.manager.clear_and_reset()  # Clear the old UI elements
-        self.manager.set_window_resolution((self.width, self.height))
-        self.create_buttons()  # Recreate the buttons
-
-    def draw(self):
-        self.screen.fill(self.background_color)  # Clear the screen with the background color
-        self.manager.draw_ui(self.screen)
-        pygame.display.update()
-
-
 # Controller class
 class MainGameScreen:
+
     def __init__(self, width, height):
 
         # yes/no dialog
@@ -335,12 +290,22 @@ class MainGameScreen:
         self.board = OthelloBoard()
         self.players = [Player(-1, BLACK, "#000000", "Player 1 (Black)"),
                         Player(1, WHITE, "#FFFFFF", "Player 2 (White)")]
+        # black starts first
         self.current_player_index = 0
+        # track winner for each round
+        self.winner = None
+
         self.running = True
         self.clicked_cell = None
         self.board.valid_positions = self.get_valid_positions()
         self.game_mode = None  # "human" or "computer"
         self.rl_agent = None  # Add this line to store the AI agent
+
+    def get_board(self):
+        """
+        Returns the current game board.
+        """
+        return self.board
 
     def reset(self):
         self.board = OthelloBoard()
@@ -423,8 +388,8 @@ class MainGameScreen:
             self.current_player_index = 1 - self.current_player_index
             self.board.valid_positions = self.get_valid_positions()  # Update valid positions after move
 
-        # Redraw the board
-        self.draw()
+            # Redraw the board
+            self.draw()
 
     def make_move(self, x, y):
         self.board.game_board[x][y] = self.players[self.current_player_index].id
@@ -506,46 +471,151 @@ class MainGameScreen:
         pygame.display.update()
 
 
-# Controller class
-class OthelloGame:
-    def __init__(self):
-        pygame.init()
-        self.splash_screen = SplashScreen(800, 600)
-        self.main_game_screen = MainGameScreen(800, 700)
-        self.current_screen = self.splash_screen
-        self.clock = pygame.time.Clock()
+'''
+Othello game env
+'''
+
+class OthelloEnv(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+
+    def __init__(self, render_mode=None, size=5):
+        super(OthelloEnv, self).__init__()
+
+        # define the game board
+        self.game_controller = MainGameScreen(800, 700)
+        self.game_board = self.game_controller.get_board()
+
+        # define action space
+        self.action_space = spaces.Discrete(8 * 8)  # 8x8 possible positions
+        # a set of the possible coordinates (x, y) for the next player
+        self.next_possible_actions = set()  # a set of the possible coordinates (row, col) for the next player
+
+        # define observation space
+        self.observation_shape = (8, 8)  # 8 row by 8 col grid
+        self.observation_space = spaces.Dict(
+            {
+                # the observation is a very large discrete space, and I do not want to use it
+                "state": spaces.Box(low=0, high=64, shape=(64,))
+                # "state": spaces.Discrete(8 * 8)
+            }
+        )
+
         self.running = True
 
-    def run(self):
-        while self.running:
-            time_delta = self.clock.tick(120) / 1000.0
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        self.render_mode = render_mode
 
-                if event.type == pygame.VIDEORESIZE:
-                    self.current_screen.resize(event.w, event.h)
+        """
+        If human-rendering is used, `self.window` will be a reference
+        to the window that we draw to. `self.clock` will be a clock that is used
+        to ensure that the environment is rendered at the correct frame rate in
+        human-mode. They will remain `None` until human-mode is used for the
+        first time.
+        """
+        self.window = None
+        self.clock = None
 
-                result = self.current_screen.handle_events(event)
-                if result == "start_game":
-                    self.current_screen = self.main_game_screen
-                elif result == "quit":
-                    self.running = False
-                elif result == "back_to_splash":
-                    self.current_screen = self.splash_screen
-                    # when going back to the splash screen, reset the main game screen
-                    self.main_game_screen = MainGameScreen(800, 700)
-                elif result == "continue_game":
-                    self.current_screen = self.main_game_screen
+    def _get_obs(self):
+        """
+        helper function to get environment observations
+        :return: a set of "state" and 1d array of positions on game board
+        """
+        return {"state": self.game_board.flatten()}  # self.game_board
 
-                self.current_screen.manager.process_events(event)
+    def _get_info(self):
+        """
+        helper function to get environment information
+        :return: a set of next player, set of next possible actions and current state winner
+        """
+        return {"next_player": self.game_controller.current_player_index,
+                "next_possible_actions": self.next_possible_actions,
+                "winner": self.game_controller.winner}
 
-            self.current_screen.manager.update(time_delta)
-            self.current_screen.draw()
+    def _action_to_pos(self, action):
+        """
+        helper function to convert action into game board positions
+        :param action: integer 0 - 63 corresponding to each position on the game board
+        :return: a set of next player, set of next possible actions and current state winner
+        """
+        assert self.action_space.contains(action), "Invalid Action"
+        y_ind = action % 8
+        x_ind = (action // 8) % 8
+        return x_ind, y_ind
 
-        pygame.quit()
-        sys.exit()
+    def _pos_to_action(self, x_ind, y_ind):
+        """
+        helper function to convert game board position into integer
+        :param x_ind: x position on game board
+        :param y_ind: y position on game board
+        :return: a set of next player, set of next possible actions and current state winner
+        """
+        action = (x_ind * 8) + y_ind
+        assert self.action_space.contains(action), "Invalid Action"
+        return action
 
-if __name__ == "__main__":
-    game = OthelloGame()
-    game.run()
+    def reset(self, seed=None, options=None):
+        """
+        Resets the game, along with the default players and initial board positions
+        :param seed: set seed including super class
+        :param options: not used
+        :return: environment observations, environment info
+        """
+        # We need the following line to seed self.np_random
+        super().reset(seed=seed)
+
+        self.game_controller = MainGameScreen(800, 700)
+        self.running = True
+
+        # variable for player turn - black always starts first
+        self.game_controller.players = [Player(-1, BLACK, "#000000", "Player 1 (Black)"),
+                                        Player(1, WHITE, "#FFFFFF", "Player 2 (White)")]
+        # black starts first
+        self.game_controller.current_player_index = 0
+        # track winner for each round
+        self.game_controller.winner = None
+        self.next_possible_actions = self.game_controller.get_valid_positions()
+
+        observation = self._get_obs()
+        info = self._get_info()
+
+        return observation, info
+
+    # @profile(stream=fp)
+    def step(self, action):
+        """
+        Plays one move of the game. Method override from gym class to capture the environment changes for each step.
+        :param action: integer 0 - 63 corresponding to each play position on the game board
+        :return: observation, reward, done, FALSE, info
+        """
+        self.game_controller.clicked_cell = self._action_to_pos(action)
+        self.game_controller.handle_move(self.game_controller.clicked_cell)
+
+
+
+        if done:
+            conclusion = "\nGame Over! "
+            if _score_black == _score_white:  # Tie
+                reward += 2
+                self.winner = "Tie"
+                conclusion += "No winner, ends up a Tie"
+            elif _score_black > _score_white:
+                self.winner = "Black"
+                reward += cfg.agent_setting.PENALTY  # if player == black_player else cfg.agent_setting.REWARD
+                conclusion += "Winner is Black."
+            else:
+                self.winner = "White"
+                reward += cfg.agent_setting.REWARD  # if player == white_player else cfg.agent_setting.PENALTY
+                conclusion += "Winner is White."
+
+            print(conclusion)
+
+        # return game board as observations
+        observation = self._get_obs()
+        # return game information
+        info = self._get_info()
+
+        # performance profiling
+        # self.prof.disable()
+
+        # additional parameter truncated is always FALSE
+        return observation, reward, done, FALSE, info
