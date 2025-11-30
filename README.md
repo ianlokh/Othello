@@ -11,7 +11,7 @@ ERROR: No matching distribution found for tensorflow-macos
 ```
 you can try running the following to install tensorflow-macos
 ```
-SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos tensorflow-metal
+SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos==2.18 tensorflow-metal
 ```
 ## Gymnasium Installation
 
@@ -26,6 +26,11 @@ pip install -U "autorom[accept-rom-license]"
 If you encounter issues with gymnasium you can try
 ```commandline=console
 pip install -q swig
+```
+If you still encounter issues with box2d you can try
+```commandline=console
+conda install conda-forge::box2d
+pip install -U "gymnasium[all]"
 ```
 ## keras-rl2 Installation
 keras-rl2 implements deep reinforcement learning algorithms in Python and seamlessly integrates with the deep learning library Keras. 
