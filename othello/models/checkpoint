@@ -1,2 +1,0 @@
-model_checkpoint_path: "OthelloDQN_weights.h5f"
-all_model_checkpoint_paths: "OthelloDQN_weights.h5f"

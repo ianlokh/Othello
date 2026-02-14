@@ -70,7 +70,7 @@ def set_gpu(gpu_ids_list):
 
 set_gpu([0])
 
-env_name = "othello:othello-v0"
+env_name = "othello:othello-pygame-v0"
 env = gym.make(env_name, render_mode="human")
 
 # no. of observations
@@ -104,16 +104,21 @@ def train(curr_epoch: int):
     global self_play_update_rate
     global env_params
 
+    env_params["display_message_line1"] = f"Epoch: {curr_epoch + 1}/{EPOCHS}"
+
     ep_reward: list[int] = []
     observation, info = env.reset(options=env_params)
     observation = observation["state"].reshape((1, 64))
 
     done = False
     while not done:
+        if env.unwrapped.terminated:
+            return
+
         next_possible_actions = info["next_possible_actions"]
 
         # move by white player
-        if info["next_player"]["name"] == "white":
+        if info["next_player"].name == "white":
             action = agent_white.choose_action(observation, next_possible_actions)
 
             next_observation, reward, done, truncated, info = env.step(action)
@@ -167,10 +172,10 @@ def train(curr_epoch: int):
     if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
         winning_rate.append((epoch, np.mean(agent_win)))
         agent_win = []  # clear array to calculate the rate of win for each epoch
-        epoch_win_rate_log_msg = "Epoch: {:d}/{:d}, white player winning rate in last {:d} rounds: {:.2%}.".format(
-            epoch, EPOCHS, epoch_win_rate_log, winning_rate[-1][1])
-        env_params["display_message_line1"] = epoch_win_rate_log_msg
-        print("\n*****", epoch_win_rate_log_msg, "*****")
+        epoch_win_rate_log_msg = "White winning rate (last {:d} rounds): {:.2%}".format(
+            epoch_win_rate_log, winning_rate[-1][1])
+        env_params["display_message_line2"] = epoch_win_rate_log_msg
+        print("\n***** Epoch: {:d}/{:d}, {} *****".format(epoch, EPOCHS, epoch_win_rate_log_msg))
 
         # if better winning_rate is found then checkpoint and save model
         if winning_rate[-1][1] >= best_winning_rate:
@@ -201,6 +206,11 @@ if __name__ == '__main__':
     # train for no. of epochs
     for epoch in range(EPOCHS):
         train(epoch)
+        if env.unwrapped.terminated:
+            print("\nTraining terminated by user at epoch {:d}.".format(epoch + 1))
+            break
+
+    env.close()
 
     # save final model after training is done
     agent_white.save_model(name="OthelloDQN", save_step="final")

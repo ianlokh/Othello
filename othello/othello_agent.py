@@ -469,8 +469,8 @@ class OthelloDQN:
         saves weights and model
         :return:
         """
-        self.model_eval.save_weights("./models/{0}/{1}.{2}.{3}".format(save_step, name, "weights", "h5"), overwrite=True)
-        self.model_eval.save("./models/{0}/{1}_{2}.{3}".format(save_step, name, "model", "h5"))
+        self.model_eval.save_weights("./models/{0}/{1}.weights.h5".format(save_step, name), overwrite=True)
+        self.model_eval.save("./models/{0}/{1}_model.keras".format(save_step, name))
 
     def load_model(self, path="", name="OthelloDQN", format_type="model"):
         """
@@ -482,13 +482,15 @@ class OthelloDQN:
 
         try:
             if format_type == "model":
-                print("{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
-                self.model_eval = tf.keras.models.load_model("{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
-                self.model_full_path = "{0}/{1}_{2}.{3}".format(path, name, "model", "h5")
+                model_path = "{0}/{1}_model.keras".format(path, name)
+                print(model_path)
+                self.model_eval = tf.keras.models.load_model(model_path)
+                self.model_full_path = model_path
             elif format_type == "weights":
-                print("{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
-                self.model_eval.load_weights("{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
-                self.model_full_path = "{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f")
+                weights_path = "{0}/{1}.weights.h5".format(path, name)
+                print(weights_path)
+                self.model_eval.load_weights(weights_path)
+                self.model_full_path = weights_path
 
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
         except ValueError as ve:
