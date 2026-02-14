@@ -101,15 +101,15 @@ class OthelloDQNModel:
         :param filters: Number of filters for the convolutions.
         :return: Output tensor after applying the residual block.
         """
-        x = layers.Conv2D(filters, (3, 3), padding='same', activation='relu')(inputs)
-        x = layers.BatchNormalization()(x)
+        x = tf.keras.layers.Conv2D(filters, (3, 3), padding='same', activation='relu')(inputs)
+        x = tf.keras.layers.BatchNormalization()(x)
 
-        x = layers.Conv2D(filters, (3, 3), padding='same')(x)  # No activation here
-        x = layers.BatchNormalization()(x)
+        x = tf.keras.layers.Conv2D(filters, (3, 3), padding='same')(x)  # No activation here
+        x = tf.keras.layers.BatchNormalization()(x)
 
-        x = layers.Add()([x, inputs])  # Skip connection
+        x = tf.keras.layers.Add()([x, inputs])  # Skip connection
 
-        return layers.Activation('relu')(x)
+        return tf.keras.layers.Activation('relu')(x)
 
     def build_model(self):
         """
@@ -132,12 +132,13 @@ class OthelloDQNModel:
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(),
 
-            tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dropout(rate=0.2),
-            # tf.keras.layers.Dense(128),
-            tf.keras.layers.Dense(128, activation="relu"),
-            # tf.keras.layers.Dense(128),
             # tf.keras.layers.Dense(128, activation="relu"),
+            # tf.keras.layers.Dropout(rate=0.3),
+            # tf.keras.layers.Dense(128, activation="relu"),
+
+            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(128, activation="relu"),
 
             tf.keras.layers.Dense(64),
             tf.keras.layers.BatchNormalization(),
@@ -153,7 +154,7 @@ class OthelloDQNModel:
             # If you are training a multi-class classifier with multiple classes, then you need softmax activation + crossentropy loss.
             # If you are training a regressor you need a proper activation function with MSE or MAE loss,
             # usually.With "proper" I mean linear, in case your output is unbounded, or ReLU in case your output
-            # takes only positive values.These are countless examples.
+            # takes only positive values.
 
         ])
 
@@ -161,14 +162,14 @@ class OthelloDQNModel:
         # tf.keras.metrics.sparse_categorical_accuracy
         # tf.keras.metrics.sparse_categorical_crossentropy
         # tf.keras.losses.MeanAbsolutePercentageError()
-        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-            initial_learning_rate=self.learning_rate,
-            decay_steps=10000,
-            decay_rate=0.96,
-            staircase=True)
+        # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        #     initial_learning_rate=self.learning_rate,
+        #     decay_steps=10000,
+        #     decay_rate=0.96,
+        #     staircase=True)
 
-        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule,
-                                                          clipnorm=1.0),
+        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate,
+                                                          clipnorm=0.5),
                        loss=tf.keras.losses.MeanSquaredError(),
                        metrics=['accuracy'])
         return _model
@@ -292,6 +293,7 @@ class OthelloDQN:
             observation = np.expand_dims(observation, axis=0)  # (1, 64, )
 
             with tf.device('/cpu:0'):
+            # with tf.device('/gpu:0'):
                 prediction = self.model_target.predict_on_batch(observation)
                 # prediction = self.model_eval.predict(observation, verbose=0)  # [0.4 ... 0.6] (64, )
                 # prediction = tf.where(mask, -1e9, prediction)  # same as torch.masked_fill
@@ -332,7 +334,7 @@ class OthelloDQN:
             self.model_target.set_weights(computed_weights)
             print('Update weights from another agent for self-play')
 
-    # sync between mode and target_model
+    # sync between model_eval and model_target
     # @profile(stream=fp)
     def __tgt_evl_sync(self):
         """
@@ -342,32 +344,27 @@ class OthelloDQN:
         """
 
         if self.player == "white":
-            for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
-                t.assign(t * (1 - self.alpha2) + e * self.alpha2)
-            print('\nUpdated target_model weights')
 
-        # if self.player == "white":
-        #
-        #     # np.multiply doesn't work on jagged arrays in 1.26.2 hence this approach
-        #     computed_weights = []
-        #     for t, e in zip(self.model_target.get_weights(), self.model_eval.get_weights()):
-        #         computed_weight = t * (1 - self.alpha2) + e * self.alpha2
-        #         computed_weights.append(computed_weight)
-        #
-        #     self.model_target.set_weights(computed_weights)
-        #
-        #     # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
-        #     #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)
-        #
-        #     # for model_layer, target_layer in zip(self.model_eval.layers, self.model_target.layers):
-        #     #     if model_layer.name == "dense":
-        #     #         # same as layer.set_weights([weights_array, bias_array])
-        #     #         target_layer.set_weights([np.multiply(model_layer.get_weights()[0], self.alpha2) +
-        #     #                                   np.multiply(target_layer.get_weights()[0], (1 - self.alpha2)),
-        #     #                                   np.multiply(model_layer.get_weights()[1], self.alpha2) +
-        #     #                                   np.multiply(target_layer.get_weights()[1], (1 - self.alpha2))])
-        #
-        #     print('\nUpdate target_model weights')
+            # np.multiply doesn't work on jagged arrays in 1.26.2 hence this approach
+            computed_weights = []
+            for t, e in zip(self.model_target.get_weights(), self.model_eval.get_weights()):
+                computed_weight = t * (1 - self.alpha2) + e * self.alpha2
+                computed_weights.append(computed_weight)
+
+            self.model_target.set_weights(computed_weights)
+
+            # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
+            #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)
+
+            # for model_layer, target_layer in zip(self.model_eval.layers, self.model_target.layers):
+            #     if model_layer.name == "dense":
+            #         # same as layer.set_weights([weights_array, bias_array])
+            #         target_layer.set_weights([np.multiply(model_layer.get_weights()[0], self.alpha2) +
+            #                                   np.multiply(target_layer.get_weights()[0], (1 - self.alpha2)),
+            #                                   np.multiply(model_layer.get_weights()[1], self.alpha2) +
+            #                                   np.multiply(target_layer.get_weights()[1], (1 - self.alpha2))])
+
+            print('\nUpdate target_model weights')
         elif self.player == "black":
             pass
 
@@ -472,8 +469,8 @@ class OthelloDQN:
         saves weights and model
         :return:
         """
-        self.model_eval.save_weights("./models/{0}/{1}.{2}.{3}".format(save_step, name, "weights", "h5"), overwrite=True)
-        self.model_eval.save("./models/{0}/{1}_{2}.{3}".format(save_step, name, "model", "h5"))
+        self.model_eval.save_weights("./models/{0}/{1}.weights.h5".format(save_step, name), overwrite=True)
+        self.model_eval.save("./models/{0}/{1}_model.keras".format(save_step, name))
 
     def load_model(self, path="", name="OthelloDQN", format_type="model"):
         """
@@ -485,13 +482,15 @@ class OthelloDQN:
 
         try:
             if format_type == "model":
-                print("{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
-                self.model_eval = tf.keras.models.load_model("{0}/{1}_{2}.{3}".format(path, name, "model", "h5"))
-                self.model_full_path = "{0}/{1}_{2}.{3}".format(path, name, "model", "h5")
+                model_path = "{0}/{1}_model.keras".format(path, name)
+                print(model_path)
+                self.model_eval = tf.keras.models.load_model(model_path)
+                self.model_full_path = model_path
             elif format_type == "weights":
-                print("{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
-                self.model_eval.load_weights("{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f"))
-                self.model_full_path = "{0}/{1}_{2}.{3}".format(path, name, "weights", "h5f")
+                weights_path = "{0}/{1}.weights.h5".format(path, name)
+                print(weights_path)
+                self.model_eval.load_weights(weights_path)
+                self.model_full_path = weights_path
 
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
         except ValueError as ve:

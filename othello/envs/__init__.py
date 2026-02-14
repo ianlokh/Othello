@@ -1,2 +1,2 @@
 from othello.envs.othello_env import OthelloEnv
-# multiple imports for multiple registrations of other environments
+from othello.envs.othello_pygame_env import OthelloPygameEnv
