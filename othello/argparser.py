@@ -20,8 +20,9 @@ def str2bool(v):
 def _parse_args():
     parser = argparse.ArgumentParser(description='Command Line Interface',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--train_mode", default='random', choices=['random', 'self-play'], type=str, metavar='',
-                        help="RL training mode. Valid options are 'random', 'self-play'")
+    parser.add_argument("--train_mode", default='random', choices=['random', 'curriculum'], type=str, metavar='',
+                        help="RL training mode. Valid options are 'random', 'curriculum' "
+                             "(random warmup for WARMUP_EPOCHS then self-play)")
     # for evaluation run
     parser.add_argument("--eval_model_dir", default='.', type=str, metavar='',
                         help="Eval models directory")

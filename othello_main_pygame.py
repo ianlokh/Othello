@@ -15,34 +15,25 @@ import pygame_gui
 from numpy.random import PCG64
 
 from othello import othello_agent
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-FPS = 60
-GRID_SIZE = 8
-CELL_SIZE = 50
-BOARD_PX = CELL_SIZE * GRID_SIZE  # 400
-BORDER_WIDTH = 10
-DIRECTIONS = (
-    (0, 1), (1, 1), (1, 0), (1, -1),
-    (0, -1), (-1, -1), (-1, 0), (-1, 1),
+from othello.constants import (
+    FPS,
+    GRID_SIZE,
+    BOARD_PX,
+    BORDER_WIDTH,
+    DIRECTIONS,
+    WHITE,
+    BLACK,
+    DARK_GREEN,
+    DARK_GREY,
+    LIGHT_GREY,
+    HINT_COLOR,
+    BLACK_ID,
+    WHITE_ID,
 )
 
-# Colours (RGB)
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-DARK_GREEN = (53, 136, 86)
-DARK_GREY = (40, 40, 40)
-LIGHT_GREY = (211, 211, 211)
-HINT_COLOR = (30, 144, 255, 80)  # translucent blue
-
-# Player IDs
-BLACK_ID = -1
-WHITE_ID = 1
-
-# Window defaults
+# ---------------------------------------------------------------------------
+# UI-only constants
+# ---------------------------------------------------------------------------
 DEFAULT_WIDTH = 800
 DEFAULT_HEIGHT = 700
 
@@ -439,7 +430,9 @@ class GameScreen:
         # Dialog state
         self._dialog = None
         self._dialog_type = None  # "back_confirm" | "game_over"
-        self._replay_button = None
+        self._btn_replay = None
+        self._btn_done = None
+        self._btn_cancel = None
 
     # -- properties ---------------------------------------------------------
 
@@ -466,29 +459,25 @@ class GameScreen:
     def handle_event(self, event):
         # --- dialog interactions -------------------------------------------
         if self._dialog is not None:
-            if event.type == pygame_gui.UI_CONFIRMATION_DIALOG_CONFIRMED:
-                if self._dialog_type == "back_confirm":
+            if self._dialog_type == "back_confirm":
+                if event.type == pygame_gui.UI_CONFIRMATION_DIALOG_CONFIRMED:
                     self._close_dialog()
                     return "back_to_splash"
-                if self._dialog_type == "game_over":
-                    # "Done" pressed
-                    self._close_dialog()
-                    return "back_to_splash"
-            elif event.type == pygame_gui.UI_WINDOW_CLOSE:
-                if self._dialog_type == "back_confirm":
+                if event.type == pygame_gui.UI_WINDOW_CLOSE:
                     self._close_dialog()
                     return None
-                if self._dialog_type == "game_over":
-                    self._close_dialog()
-                    return "back_to_splash"
-            # Replay button inside game-over dialog
-            if (self._dialog_type == "game_over"
-                    and event.type == pygame_gui.UI_BUTTON_PRESSED
-                    and self._replay_button is not None
-                    and event.ui_element == self._replay_button):
-                self._close_dialog()
-                self.reset()
-                return None
+            elif self._dialog_type == "game_over":
+                if event.type == pygame_gui.UI_BUTTON_PRESSED:
+                    if event.ui_element == self._btn_replay:
+                        self._close_dialog()
+                        self.reset()
+                        return None
+                    if event.ui_element == self._btn_done:
+                        self._close_dialog()
+                        return "back_to_splash"
+                    if event.ui_element == self._btn_cancel:
+                        self._close_dialog()
+                        return None
             return None  # swallow all other events while a dialog is open
 
         # --- button presses ------------------------------------------------
@@ -548,6 +537,11 @@ class GameScreen:
         self.renderer.resize(width, height)
         self.manager.clear_and_reset()
         self.manager.set_window_resolution((width, height))
+        self._dialog = None
+        self._dialog_type = None
+        self._btn_replay = None
+        self._btn_done = None
+        self._btn_cancel = None
         self._create_ui()
 
     # -- game logic ---------------------------------------------------------
@@ -562,7 +556,9 @@ class GameScreen:
         self.skip_turn = False
         self._dialog = None
         self._dialog_type = None
-        self._replay_button = None
+        self._btn_replay = None
+        self._btn_done = None
+        self._btn_cancel = None
 
         # Reload agent model with a fresh seed for variety
         if self.mode == "agent" and self.rl_agent is not None:
@@ -672,34 +668,64 @@ class GameScreen:
         self._dialog_type = "back_confirm"
 
     def _show_game_over(self, message):
-        rect = pygame.Rect(0, 0, 420, 220)
+        dialog_w, dialog_h = 440, 210
+        rect = pygame.Rect(0, 0, dialog_w, dialog_h)
         rect.center = (self.width // 2, self.height // 2)
-        self._dialog = pygame_gui.windows.UIConfirmationDialog(
-            rect=rect,
+
+        self._dialog = pygame_gui.elements.UIPanel(
+            relative_rect=rect,
+            starting_height=10,
             manager=self.manager,
-            window_title="Game Over",
-            action_long_desc=message,
-            action_short_name="Done",
-            blocking=True,
         )
         self._dialog_type = "game_over"
 
-        # Add a Replay button alongside the dialog
-        replay_rect = pygame.Rect(0, 0, 140, 40)
-        replay_rect.midtop = (self.width // 2, rect.bottom + 8)
-        self._replay_button = pygame_gui.elements.UIButton(
-            relative_rect=replay_rect,
+        # Title and message labels
+        pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect(10, 10, dialog_w - 20, 30),
+            text="Game Over",
+            manager=self.manager,
+            container=self._dialog,
+        )
+        pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect(10, 52, dialog_w - 20, 36),
+            text=message,
+            manager=self.manager,
+            container=self._dialog,
+        )
+
+        # Three buttons: Replay | Done | Cancel
+        btn_w, btn_h = 110, 38
+        gap = 10
+        total_w = 3 * btn_w + 2 * gap
+        bx = (dialog_w - total_w) // 2
+        by = dialog_h - btn_h - 20
+
+        self._btn_replay = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(bx, by, btn_w, btn_h),
             text="Replay",
             manager=self.manager,
+            container=self._dialog,
+        )
+        self._btn_done = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(bx + btn_w + gap, by, btn_w, btn_h),
+            text="Done",
+            manager=self.manager,
+            container=self._dialog,
+        )
+        self._btn_cancel = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(bx + 2 * (btn_w + gap), by, btn_w, btn_h),
+            text="Cancel",
+            manager=self.manager,
+            container=self._dialog,
         )
 
     def _close_dialog(self):
         if self._dialog is not None:
-            self._dialog.kill()
+            self._dialog.kill()  # killing the panel also kills its children
             self._dialog = None
-        if self._replay_button is not None:
-            self._replay_button.kill()
-            self._replay_button = None
+        self._btn_replay = None
+        self._btn_done = None
+        self._btn_cancel = None
         self._dialog_type = None
 
 
