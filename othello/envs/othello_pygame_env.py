@@ -1,9 +1,10 @@
 """Othello Gymnasium environment with Pygame rendering.
 
 Replaces the Turtle/tkinter-based OthelloEnv with a Pygame-based
-implementation.  Reuses the Board, Player, BoardRenderer classes and
-constants from othello_main_pygame for consistent object modelling
-and rendering across the interactive game and the RL training pipeline.
+implementation.  Reuses the Board, Player, BoardRenderer classes
+from othello_main_pygame and shared constants from othello.constants
+for consistent object modelling and rendering across the interactive
+game and the RL training pipeline.
 """
 
 import random
@@ -15,24 +16,27 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from othello import config as cfg
-from othello_main_pygame import (
-    Board,
-    Player,
-    BoardRenderer,
-    BLACK_ID,
-    WHITE_ID,
+from othello.constants import (
+    FPS,
     GRID_SIZE,
     BOARD_PX,
+    BLACK_ID,
+    WHITE_ID,
     BLACK,
     WHITE,
     DARK_GREY,
     LIGHT_GREY,
 )
+from othello_main_pygame import (
+    Board,
+    Player,
+    BoardRenderer,
+)
 
-# Window defaults for the rendered pygame surface.
+# Window defaults for the training renderer (taller than the interactive UI
+# to accommodate the training HUD with pause/terminate buttons).
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 800
-
 
 class OthelloPygameEnv(gym.Env):
     """8x8 Othello environment rendered with Pygame.
@@ -55,7 +59,7 @@ class OthelloPygameEnv(gym.Env):
         * ``"rgb_array"`` — returns an (H, W, 3) uint8 numpy array.
     """
 
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": FPS}
 
     def __init__(self, render_mode=None):
         super().__init__()
@@ -204,7 +208,7 @@ class OthelloPygameEnv(gym.Env):
         if self.game_over:
             conclusion = "\nGame Over! "
             if black_score == white_score:
-                reward += 2
+                reward += cfg.agent_setting.TIE
                 self.winner = "Tie"
                 conclusion += "No winner, ends up a Tie"
             elif black_score > white_score:

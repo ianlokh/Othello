@@ -1,7 +1,6 @@
 import os
 import random
 import sys
-from collections import deque
 
 import numpy as np
 import tensorflow as tf
@@ -10,6 +9,7 @@ import tensorflow.keras.backend as K
 from scipy.special import softmax
 
 from othello import config as cfg
+from othello.replay_buffer import UniformReplayBuffer, PrioritizedReplayBuffer
 
 # for performance profiling
 # import cProfile as cprofile
@@ -17,6 +17,23 @@ from othello import config as cfg
 # fp = open("report-agent.log", "w+")  # to capture memory profile logs
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+# Classic Othello positional weight matrix (from white's perspective).
+# Corners (120) are extremely valuable — they can never be flipped.
+# X-squares (-40, diagonally adjacent to corners) are dangerous to occupy.
+# C-squares (-20, edge positions adjacent to corners) are also risky.
+# fmt: off
+POSITION_WEIGHTS = np.array([                                          # noqa: E201
+    [120, -20,  20,   5,   5,  20, -20, 120],                         # noqa: E201
+    [-20, -40,  -5,  -5,  -5,  -5, -40, -20],                         # noqa: E201
+    [ 20,  -5,  15,   3,   3,  15,  -5,  20],                         # noqa: E201
+    [  5,  -5,   3,   3,   3,   3,  -5,   5],                         # noqa: E201
+    [  5,  -5,   3,   3,   3,   3,  -5,   5],                         # noqa: E201
+    [ 20,  -5,  15,   3,   3,  15,  -5,  20],                         # noqa: E201
+    [-20, -40,  -5,  -5,  -5,  -5, -40, -20],                         # noqa: E201
+    [120, -20,  20,   5,   5,  20, -20, 120],                         # noqa: E201
+], dtype=np.float64).flatten()  # shape (64,) to match observation layout
+# fmt: on
 
 '''
 import tensorflow as tf
@@ -162,13 +179,18 @@ class OthelloDQNModel:
         # tf.keras.metrics.sparse_categorical_accuracy
         # tf.keras.metrics.sparse_categorical_crossentropy
         # tf.keras.losses.MeanAbsolutePercentageError()
-        # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        #     initial_learning_rate=self.learning_rate,
-        #     decay_steps=10000,
-        #     decay_rate=0.96,
-        #     staircase=True)
 
-        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate,
+        # Decay LR by 10% every 10,000 learn steps (one step = one train_on_batch call).
+        # Over 75,000 epochs this brings LR from 1e-4 down to ~4.8e-5, helping the
+        # network fine-tune later in training without overwriting earlier Q-values.
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=self.learning_rate,
+            decay_steps=10000,
+            decay_rate=0.9,
+            staircase=True,
+        )
+
+        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule,
                                                           clipnorm=0.5),
                        loss=tf.keras.losses.MeanSquaredError(),
                        metrics=['accuracy'])
@@ -193,7 +215,7 @@ class OthelloDQN:
         self.gamma = cfg.agent_setting.GAMMA  # reward decay rate
         self.alpha1 = cfg.agent_setting.ALPHA1  # soft copy weights for self-play, alpha1 updates while (1-alpha1) remains
         self.alpha2 = cfg.agent_setting.ALPHA2  # soft copy weights from eval net to target net, alpha2 updates while (1-alpha2) remains
-        self.epsilon_reduce = 0.9999  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
+        self.epsilon_reduce = cfg.agent_setting.EPSILON_REDUCE  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
 
         if self.mode == "training":
             self.epsilon = cfg.agent_setting.EPSILON  # epsilon parameter for epsilon greedy selection training
@@ -203,16 +225,25 @@ class OthelloDQN:
         # q network learning parameters
         self.learning_rate = cfg.agent_setting.LEARNING_RATE  # 0.001, 0.0005, 0.0001
         self.batch_size = cfg.agent_setting.BATCH_SIZE  # 128, 256, 512, 768, 1024, 2048
-        self.training_epochs = cfg.agent_setting.TRAINING_EPOCHS  # 15, 20, 50, 100
 
         # total learning step - count how many times the eval net has been updated, used to set a basis for updating
         # the target net
-        self.learn_step_counter = 0
-        self.replace_target_iter = 75  # 10, 50, 75, 100, 150
+        self.learn_step_counter = cfg.agent_setting.LEARN_STEP_COUNTER
+        self.replace_target_iter = cfg.agent_setting.REPLACE_TARGET_ITER  # 10, 50, 75, 100, 150
 
         # replay buffer settings
-        self.replay_buffer_size = cfg.agent_setting.REPLAY_BUFFER_SIZE  # 20000, 40000, 75000, 150000
-        self.replay_buffer = deque(maxlen=self.replay_buffer_size)
+        self.replay_buffer_size = cfg.agent_setting.REPLAY_BUFFER_SIZE
+        if cfg.agent_setting.REPLAY_BUFFER_STRATEGY == "per":
+            self.replay_buffer = PrioritizedReplayBuffer(
+                capacity=self.replay_buffer_size,
+                alpha=cfg.agent_setting.PER_ALPHA,
+                beta=cfg.agent_setting.PER_BETA,
+                beta_increment=cfg.agent_setting.PER_BETA_INCREMENT,
+                epsilon=cfg.agent_setting.PER_EPSILON,
+                abs_err_upper=cfg.agent_setting.PER_ABS_ERR_UPPER,
+            )
+        else:
+            self.replay_buffer = UniformReplayBuffer(capacity=self.replay_buffer_size)
 
         # specify the q network path
         self.model_full_path = "./models/"
@@ -257,21 +288,41 @@ class OthelloDQN:
         os.environ['TF_DETERMINISTIC_OPS'] = '1'
         os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
 
+    @staticmethod
+    def _compute_potential(observation):
+        """Compute positional potential Phi(s) for PBRS reward shaping.
+
+        Uses dot product of the flattened board state with POSITION_WEIGHTS.
+        Positive values favour white, negative favour black (matches board encoding).
+
+        :param observation: numpy array, shape (1, 64)
+        :return: scalar potential value
+        """
+        return np.dot(POSITION_WEIGHTS, observation.flatten())
+
     # @profile(stream=fp)
     def store_transition(self, observation, action, reward, done, next_observation):
         """
-        stores the experience into a deque object. for white player only as we wil be training the white player
-        :param next_observation:
-        :param done:
-        :param reward:
-        :param action:
-        :param observation:
-        :return:
+        Store an experience transition into the replay buffer (white player only).
+
+        :param observation: current state
+        :param action: action taken
+        :param reward: reward received
+        :param done: whether the episode ended
+        :param next_observation: resulting state
+        :return: None
         """
         if self.player == "white":
-            self.replay_buffer.append((observation, action, reward, next_observation, done))
-        elif self.player == "black":  # black doesn't need to learn so no need to store
-            pass
+            # Potential-based reward shaping (Ng et al. 1999):
+            # F(s, s') = gamma * Phi(s') - Phi(s)
+            # Preserves optimal policy while providing intermediate signal.
+            if cfg.agent_setting.REWARD_SHAPING_ENABLED and not done:
+                phi_s = self._compute_potential(observation)
+                phi_s_prime = self._compute_potential(next_observation)
+                shaping = self.gamma * phi_s_prime - phi_s
+                reward = reward + cfg.agent_setting.REWARD_POSITIONAL_WEIGHT * shaping
+
+            self.replay_buffer.add((observation, action, reward, next_observation, done))
 
     # @profile(stream=fp)
     def choose_action(self, observation, possible_actions):
@@ -293,11 +344,7 @@ class OthelloDQN:
             observation = np.expand_dims(observation, axis=0)  # (1, 64, )
 
             with tf.device('/cpu:0'):
-            # with tf.device('/gpu:0'):
-                prediction = self.model_target.predict_on_batch(observation)
-                # prediction = self.model_eval.predict(observation, verbose=0)  # [0.4 ... 0.6] (64, )
-                # prediction = tf.where(mask, -1e9, prediction)  # same as torch.masked_fill
-                # prediction = tf.nn.softmax(prediction, axis=None, name=None)  # all masked prob equal to 0 after this step
+                prediction = self.model_target(observation, training=False).numpy()
 
             prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
 
@@ -315,7 +362,13 @@ class OthelloDQN:
         # self.cprof.disable()
         return action
 
-    # assign weights fromm trained agent into self-play agent
+    @staticmethod
+    def _soft_update(target_model, source_model, alpha):
+        """Polyak (soft) update: target <- (1-alpha)*target + alpha*source."""
+        for t_var, s_var in zip(target_model.variables, source_model.variables):
+            t_var.assign(t_var * (1 - alpha) + s_var * alpha)
+
+    # assign weights from trained agent into self-play agent
     # @profile(stream=fp)
     def assign_weights(self, other: "OthelloDQN"):
         """
@@ -325,152 +378,141 @@ class OthelloDQN:
         :return:
         """
         if self.player == "other":
-            # self.model_target.set_weights(other.model_eval.get_weights())
-            computed_weights = []
-            for t, e in zip(self.model_target.get_weights(), other.model_eval.get_weights()):
-                computed_weight = t * (1 - self.alpha1) + e * self.alpha1
-                computed_weights.append(computed_weight)
-
-            self.model_target.set_weights(computed_weights)
+            self._soft_update(self.model_target, other.model_eval, self.alpha1)
             print('Update weights from another agent for self-play')
 
     # sync between model_eval and model_target
     # @profile(stream=fp)
-    def __tgt_evl_sync(self):
+    def _tgt_evl_sync(self):
         """
         copies the weights from model_eval (Q network) to model_target (Target network). partial copy the weights from
         eval net to target net, alpha2 updates while (1-alpha2) remains
         :return:
         """
-
         if self.player == "white":
-
-            # np.multiply doesn't work on jagged arrays in 1.26.2 hence this approach
-            computed_weights = []
-            for t, e in zip(self.model_target.get_weights(), self.model_eval.get_weights()):
-                computed_weight = t * (1 - self.alpha2) + e * self.alpha2
-                computed_weights.append(computed_weight)
-
-            self.model_target.set_weights(computed_weights)
-
-            # for t, e in zip(self.model_target.trainable_variables, self.model_eval.trainable_variables):
-            #     t.assign(t * (1 - self.alpha2) + e * self.alpha2)
-
-            # for model_layer, target_layer in zip(self.model_eval.layers, self.model_target.layers):
-            #     if model_layer.name == "dense":
-            #         # same as layer.set_weights([weights_array, bias_array])
-            #         target_layer.set_weights([np.multiply(model_layer.get_weights()[0], self.alpha2) +
-            #                                   np.multiply(target_layer.get_weights()[0], (1 - self.alpha2)),
-            #                                   np.multiply(model_layer.get_weights()[1], self.alpha2) +
-            #                                   np.multiply(target_layer.get_weights()[1], (1 - self.alpha2))])
-
+            self._soft_update(self.model_target, self.model_eval, self.alpha2)
             print('\nUpdate target_model weights')
-        elif self.player == "black":
-            pass
 
     # @profile(stream=fp)
     def learn(self):
         """
-        trains the DQN model for white player only. model_eval and model_target are synced before training
-        :return:
+        Trains the DQN model (white player only).
+
+        DQN update rule:
+            if terminal:  target_Q(s,a) = r
+            else:         target_Q(s,a) = r + gamma * max_a' Q_target(s', a')
+
+        Key design notes:
+        - model_eval (online network) predicts Q(s) for current states — these are the
+          values being optimised via gradient descent.
+        - model_target (target network) predicts Q(s') for next states — these provide
+          stable bootstrap targets and are updated periodically via soft copy.
+        - A single gradient step is taken per call (standard DQN). Multiple steps on
+          the same precomputed targets would overfit on stale values.
+        - When using PER, importance-sampling weights scale per-sample loss to correct
+          for non-uniform sampling bias, and TD errors update priorities afterward.
+
+        :return: None
         """
-
-        if self.player == "white":  # only white player learns
-            # if the length of the replay_buffer is not equal to the batch size then exit learning. This is because
-            # during training, we would sample BATCH_SIZE from the replay buffer. So we need to ensure that the
-            # replay_buffer size is > than BATCH_SIZE before we do training
-            if len(self.replay_buffer) < self.batch_size:
-                return
-
-            # sync model_eval and model_targets
-            if self.learn_step_counter % self.replace_target_iter == 0:
-                self.__tgt_evl_sync()
-
-            # get random sample from reply_buffer
-            samples = random.sample(self.replay_buffer, self.batch_size)
-
-            target_batch = []
-            zipped_samples = list(zip(*samples))
-            states, actions, rewards, new_states, dones = zipped_samples
-
-            # using predict_on_batch resolves the memory leak from predict function
-            targets = np.array(self.model_target.predict_on_batch(np.array(states)))
-            q_values = np.array(self.model_eval.predict_on_batch(np.array(new_states)))
-            # targets = self.model_target.predict(np.array(states), batch_size=self.batch_size , steps=1, verbose=0)
-            # q_values = self.model_eval.predict(np.array(new_states), batch_size=self.batch_size , steps=1, verbose=0)
-
-            # populate reward for training
-            for i in range(self.batch_size):
-                q_value = max(q_values[i][0])
-                target = targets[i].copy()
-                # print("before count:", i, "q_value:", q_value,"rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
-                # input("press to continue")
-                if dones[i]:
-                    target[0][actions[i]] = rewards[i]
-                    # print("1 after count:", i, "q_value:", q_value, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
-                    # input("press to continue")
-                else:
-                    target[0][actions[i]] = rewards[i] + q_value * self.gamma
-                    # print("2 after count:", i, "q_value:", q_value, "rewards:", rewards[i], "actions:", actions[i], "target:", target[0][actions[i]])
-                    # input("press to continue")
-                target_batch.append(target)
-
-            # # train network
-            # history = self.model_eval.fit(np.array(states), np.array(target_batch),
-            #                               epochs=self.training_epochs,
-            #                               batch_size=self.batch_size,
-            #                               steps_per_epoch=1,
-            #                               verbose=0, workers=1)
-
-            history = []
-            for i in range(self.training_epochs):
-                # states, target_batch = shuffle(np.array(states), np.array(target_batch))
-                loss, metrics = self.model_eval.train_on_batch(np.array(states), np.array(target_batch))
-                history.append((loss, metrics))
-
-            if history is None:
-                pass
-            else:
-                print("\nEpsilon:", round(self.epsilon, 4),
-                      "Replay Buffer:", len(self.replay_buffer),
-                      "Learn Step:", self.learn_step_counter,
-                      # "Avg. Loss:", '%.4f' % np.mean([round(elem, 4) for elem in history.history['loss']]),
-                      # "Avg. Accuracy:", '%.4f' % np.mean([round(elem, 4) for elem in history.history['accuracy']]),
-                      "Avg. Loss:", '%.4f' % np.mean([item[0] for item in history if item[0] != 0]),
-                      "Avg. Metrics:", '%.4f' % np.mean([item[1] for item in history if item[1] != 0]),
-                      "\n")
-
-            # increment the learning step counter
-            self.learn_step_counter += 1
-
-            # update the epsilon for epsilon greedy exploration / exploitation
-            self.epsilon *= self.epsilon_reduce  # eps * 0.9xxxx
-
+        if self.player != "white":
             return
+
+        if len(self.replay_buffer) < self.batch_size:
+            return
+
+        # sync model_eval and model_targets periodically
+        if self.learn_step_counter % self.replace_target_iter == 0:
+            self._tgt_evl_sync()
+
+        # sample from replay buffer (uniform or prioritized)
+        samples, is_weights, indices = self.replay_buffer.sample(self.batch_size)
+
+        zipped_samples = list(zip(*samples))
+        states, actions, rewards, new_states, dones = zipped_samples
+
+        states_arr = np.array(states)
+        new_states_arr = np.array(new_states)
+
+        # eval net predicts Q(s) for current states (these are the values being trained)
+        # target net predicts Q(s') for next states (stable bootstrap targets)
+        targets = np.array(self.model_eval.predict_on_batch(states_arr))
+        q_values_next = np.array(self.model_target.predict_on_batch(new_states_arr))
+
+        # build target batch and compute TD errors for priority updates
+        td_errors = np.zeros(self.batch_size, dtype=np.float32)
+        target_batch = []
+
+        for i in range(self.batch_size):
+            q_next_max = np.max(q_values_next[i][0])
+            target = targets[i].copy()
+            old_q = target[0][actions[i]]
+
+            if dones[i]:
+                target[0][actions[i]] = rewards[i]
+            else:
+                target[0][actions[i]] = rewards[i] + q_next_max * self.gamma
+
+            td_errors[i] = abs(target[0][actions[i]] - old_q)
+            target_batch.append(target)
+
+        # update priorities in PER buffer (no-op for uniform)
+        if indices is not None:
+            self.replay_buffer.update_priorities(indices, td_errors)
+
+        # single gradient step (IS-weighted when using PER)
+        targets_arr = np.array(target_batch)
+        if indices is not None:
+            loss, metrics = self.model_eval.train_on_batch(
+                states_arr, targets_arr, sample_weight=is_weights
+            )
+        else:
+            loss, metrics = self.model_eval.train_on_batch(states_arr, targets_arr)
+
+        print("\nEpsilon:", round(self.epsilon, 4),
+              "Replay Buffer:", len(self.replay_buffer),
+              "Learn Step:", self.learn_step_counter,
+              "Loss:", '%.4f' % loss,
+              "Metrics:", '%.4f' % metrics,
+              "\n")
+
+        # increment the learning step counter
+        self.learn_step_counter += 1
+
+        # update the epsilon for epsilon greedy exploration / exploitation
+        self.epsilon = max(cfg.agent_setting.EPSILON_MIN, self.epsilon * self.epsilon_reduce)
 
     # @profile(stream=fp)
     def reward_transition_update(self, reward: float):
         """
-        if it is the Black that take the last turn, the reward the white player obtained should be updated because the
-        winner has been determined
-        :param reward: float
-        :return:
-        """
-        def modify_tuple(tup, idx, new_value):
-            return tup[:idx] + (new_value,) + tup[idx + 1:]
+        Patch white's last replay-buffer transition when black makes the game-ending move.
 
+        When black plays last, white's most recent stored transition has an interim reward
+        (possibly including a shaped component) and done=False. This method adds the
+        terminal reward on top of the existing reward and marks done=True so the Q-update
+        correctly uses ``target = reward`` instead of ``target = reward + gamma * max_Q(s')``.
+
+        :param reward: terminal reward determined after the game ends
+        :return: None
+        """
         if self.player == "white":
-            obs = modify_tuple(self.replay_buffer[-1], 2, reward)
-            self.replay_buffer.pop()
-            self.replay_buffer.append(obs)
+            self.replay_buffer.update_last(reward, done=True)
 
     def save_model(self, name="OthelloDQN", save_step='training'):
         """
-        saves weights and model
-        :return:
+        Saves the target network weights and model.
+
+        model_target is saved (not model_eval) because:
+        - choose_action uses model_target for inference, so win-rate measurements reflect
+          model_target's performance — saving model_eval would store a different, noisier network.
+        - model_target is the temporally-smoothed snapshot, making it the correct artefact
+          to checkpoint and deploy.
+        On reload, load_model sets both model_eval and model_target to the saved weights,
+        which is the correct starting state for both play and resumed training.
         """
-        self.model_eval.save_weights("./models/{0}/{1}.weights.h5".format(save_step, name), overwrite=True)
-        self.model_eval.save("./models/{0}/{1}_model.keras".format(save_step, name))
+        save_dir = "./models/{0}".format(save_step)
+        os.makedirs(save_dir, exist_ok=True)
+        self.model_target.save_weights("{0}/{1}.weights.h5".format(save_dir, name), overwrite=True)
+        self.model_target.save("{0}/{1}_model.keras".format(save_dir, name))
 
     def load_model(self, path="", name="OthelloDQN", format_type="model"):
         """
@@ -482,16 +524,25 @@ class OthelloDQN:
 
         try:
             if format_type == "model":
-                model_path = "{0}/{1}_model.keras".format(path, name)
+                # If the user selected the .keras file directly, use it as-is;
+                # otherwise treat path as a directory and append the filename.
+                if path.endswith(".keras") and os.path.isfile(path):
+                    model_path = path
+                else:
+                    model_path = "{0}/{1}_model.keras".format(path, name)
                 print(model_path)
                 self.model_eval = tf.keras.models.load_model(model_path)
                 self.model_full_path = model_path
             elif format_type == "weights":
-                weights_path = "{0}/{1}.weights.h5".format(path, name)
+                if path.endswith(".weights.h5") and os.path.isfile(path):
+                    weights_path = path
+                else:
+                    weights_path = "{0}/{1}.weights.h5".format(path, name)
                 print(weights_path)
                 self.model_eval.load_weights(weights_path)
                 self.model_full_path = weights_path
 
+            self.model_target.set_weights(self.model_eval.get_weights())
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
         except ValueError as ve:
             error_str = str(ve)
@@ -514,6 +565,7 @@ class OthelloDQN:
         # load model
         try:
             self.model_eval = tf.keras.models.load_model(self.model_full_path)
+            self.model_target.set_weights(self.model_eval.get_weights())
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
         except (ValueError, OSError) as ve:
             error_str = str(ve)

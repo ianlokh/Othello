@@ -84,9 +84,9 @@ importlib.reload(sys.modules.get('othello.othello_agent'))
 agent_white = othello_agent.OthelloDQN(nb_observations=64, player="white")
 # agent_white.model_target.summary()
 
-# if train mode is self-play then instantiate another agent for playing against
-if parser.train_mode == 'self-play':
-    agent_other = othello_agent.OthelloDQN(nb_observations=64, player="other")
+# if train mode is curriculum then instantiate another agent for the self-play phase
+if parser.train_mode == 'curriculum':
+    agent_other = othello_agent.OthelloDQN(nb_observations=64, player="other", mode="play")
 
 
 # @profile(stream=fp)
@@ -104,7 +104,24 @@ def train(curr_epoch: int):
     global self_play_update_rate
     global env_params
 
-    env_params["display_message_line1"] = f"Epoch: {curr_epoch + 1}/{EPOCHS}"
+    # Determine effective opponent mode for this epoch.
+    # In 'curriculum' mode the agent trains against random for WARMUP_EPOCHS then switches to self-play.
+    if parser.train_mode == 'curriculum':
+        effective_mode = 'random' if curr_epoch < cfg.training_param.WARMUP_EPOCHS else 'self-play'
+        phase_label = " [warmup]" if effective_mode == 'random' else " [self-play]"
+    else:
+        effective_mode = parser.train_mode
+        phase_label = ""
+
+    # At the warmup→self-play boundary, hard-copy the stable target network weights into agent_other
+    # so it starts as a strong opponent rather than an untrained random network.
+    # model_target is used (not model_eval) because it is the temporally-smoothed, lower-variance
+    # snapshot — the same reason DQN uses a target network for bootstrap targets.
+    if parser.train_mode == 'curriculum' and curr_epoch == cfg.training_param.WARMUP_EPOCHS:
+        agent_other.model_target.set_weights(agent_white.model_target.get_weights())
+        print(f"\n***** Curriculum: warmup complete at epoch {curr_epoch}. Switching to self-play.")
+
+    env_params["display_message_line1"] = f"Epoch: {curr_epoch + 1}/{EPOCHS} | Mode: {parser.train_mode}{phase_label}"
 
     ep_reward: list[int] = []
     observation, info = env.reset(options=env_params)
@@ -131,7 +148,7 @@ def train(curr_epoch: int):
 
             ep_reward.append(reward)
         else:  # move by opponent
-            if parser.train_mode == 'self-play':
+            if effective_mode == 'self-play':
                 action = agent_other.choose_action(observation, next_possible_actions)
             else:
                 action = random.choice(list(next_possible_actions))
@@ -163,10 +180,20 @@ def train(curr_epoch: int):
     # this is reward_history for white
     # reward_history.append(np.sum(ep_reward))
 
-    # if training mode is self-play then assign training weights to opponent agent
-    if (epoch % self_play_update_rate == 0) and (parser.train_mode == 'self-play'):
-        agent_other.assign_weights(agent_white)
-        print("\n***** Assign weights to self-play agent")
+    # Periodically hard-copy agent_white's stable target network into agent_other, but only when
+    # agent_white is winning enough to confirm it has surpassed the current opponent.
+    # - Hard copy (not soft/Polyak) because the win-rate gate already guarantees the new policy is
+    #   better; blending with old weights would unnecessarily dilute that improvement.
+    # - model_target (not model_eval) because it is the temporally-smoothed, lower-variance snapshot,
+    #   producing a more coherent and stable opponent than the noisier online network.
+    if (curr_epoch % self_play_update_rate == 0) and (effective_mode == 'self-play'):
+        recent_win_rate = winning_rate[-1][1] if winning_rate else 0.0
+        threshold = cfg.training_param.SELF_PLAY_UPDATE_WIN_THRESHOLD
+        if recent_win_rate >= threshold:
+            agent_other.model_target.set_weights(agent_white.model_target.get_weights())
+            print(f"\n***** Assign weights to self-play agent (win rate {recent_win_rate:.1%} >= {threshold:.1%})")
+        else:
+            print(f"\n***** Skipped opponent update — win rate {recent_win_rate:.1%} below threshold {threshold:.1%}")
 
     # log the winning rate at every epoch_win_rate_log and clean up objects
     if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
