@@ -108,10 +108,10 @@ class Board:
                     white += 1
         return black, white
 
-    def is_terminal(self):
-        """True when neither player has a legal move."""
-        return (not self.get_valid_moves(BLACK_ID)
-                and not self.get_valid_moves(WHITE_ID))
+    # def is_terminal(self):
+    #     """True when neither player has a legal move."""
+    #     return (not self.get_valid_moves(BLACK_ID)
+    #             and not self.get_valid_moves(WHITE_ID))
 
     def to_numpy(self):
         """Return the board as a numpy array (for the RL agent)."""

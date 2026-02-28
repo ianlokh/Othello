@@ -9,7 +9,7 @@ class agent_setting:
     GAMMA = 0.9975  # reward decay rate - 0.975, 0.9975
     ALPHA1 = 0.3  # soft copy weights for self-play, alpha1 updates while (1-alpha1) remains
     ALPHA2 = 0.1  # soft copy weights from eval net to target net, alpha2 updates from eval while (1-alpha2) remains for target net
-    EPSILON_REDUCE = 0.9999  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
+    EPSILON_REDUCE = 0.999975  # 0.995, 0.9995, 0.99975, 0.9999, 0.999975
     EPSILON = 1.0  # epsilon parameter for epsilon greedy selection
     EPSILON_MIN = 0.075  # minimum exploration rate — prevents full exploitation collapse
 
@@ -44,7 +44,7 @@ class agent_setting:
 
 
 class training_param:
-    EPOCHS = 75000  # 150000
+    EPOCHS = 150000
     EPOCH_WIN_RATE_LOG = 50
     SELF_PLAY_UPDATE_LOG = 5000
     WARMUP_EPOCHS = 15000  # epochs vs random before switching to self-play (curriculum mode only)

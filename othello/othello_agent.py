@@ -368,19 +368,6 @@ class OthelloDQN:
         for t_var, s_var in zip(target_model.variables, source_model.variables):
             t_var.assign(t_var * (1 - alpha) + s_var * alpha)
 
-    # assign weights from trained agent into self-play agent
-    # @profile(stream=fp)
-    def assign_weights(self, other: "OthelloDQN"):
-        """
-        accept weights from the other (white) player where the weights from the trained agent will be copied and this
-        agent will be used for self-play training
-        :param other: trained agent from which the weights are to be copied from
-        :return:
-        """
-        if self.player == "other":
-            self._soft_update(self.model_target, other.model_eval, self.alpha1)
-            print('Update weights from another agent for self-play')
-
     # sync between model_eval and model_target
     # @profile(stream=fp)
     def _tgt_evl_sync(self):
@@ -396,18 +383,20 @@ class OthelloDQN:
     # @profile(stream=fp)
     def learn(self):
         """
-        Trains the DQN model (white player only).
+        Trains the DDQN model (white player only).
 
-        DQN update rule:
+        DDQN update rule:
             if terminal:  target_Q(s,a) = r
-            else:         target_Q(s,a) = r + gamma * max_a' Q_target(s', a')
+            else:         target_Q(s,a) = r + gamma * Q_target(s', argmax_a' Q_eval(s', a'))
 
         Key design notes:
         - model_eval (online network) predicts Q(s) for current states — these are the
-          values being optimised via gradient descent.
-        - model_target (target network) predicts Q(s') for next states — these provide
-          stable bootstrap targets and are updated periodically via soft copy.
-        - A single gradient step is taken per call (standard DQN). Multiple steps on
+          values being optimised via gradient descent. It also selects the best next
+          action (argmax) to decouple action selection from evaluation (DDQN).
+        - model_target (target network) evaluates Q(s') at the action chosen by
+          model_eval — this provides stable bootstrap targets and reduces overestimation
+          bias compared to plain DQN. Updated periodically via soft copy.
+        - A single gradient step is taken per call. Multiple steps on
           the same precomputed targets would overfit on stale values.
         - When using PER, importance-sampling weights scale per-sample loss to correct
           for non-uniform sampling bias, and TD errors update priorities afterward.
@@ -435,15 +424,18 @@ class OthelloDQN:
 
         # eval net predicts Q(s) for current states (these are the values being trained)
         # target net predicts Q(s') for next states (stable bootstrap targets)
+        # eval net also predicts Q(s') for action selection only (DDQN: decouple select from evaluate)
         targets = np.array(self.model_eval.predict_on_batch(states_arr))
         q_values_next = np.array(self.model_target.predict_on_batch(new_states_arr))
+        q_values_next_eval = np.array(self.model_eval.predict_on_batch(new_states_arr))
 
         # build target batch and compute TD errors for priority updates
         td_errors = np.zeros(self.batch_size, dtype=np.float32)
         target_batch = []
 
         for i in range(self.batch_size):
-            q_next_max = np.max(q_values_next[i][0])
+            best_next_action = np.argmax(q_values_next_eval[i][0])  # eval net selects action
+            q_next_max = q_values_next[i][0][best_next_action]       # target net evaluates it
             target = targets[i].copy()
             old_q = target[0][actions[i]]
 

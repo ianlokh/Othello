@@ -113,12 +113,12 @@ def train(curr_epoch: int):
         effective_mode = parser.train_mode
         phase_label = ""
 
-    # At the warmup→self-play boundary, hard-copy the stable target network weights into agent_other
-    # so it starts as a strong opponent rather than an untrained random network.
-    # model_target is used (not model_eval) because it is the temporally-smoothed, lower-variance
-    # snapshot — the same reason DQN uses a target network for bootstrap targets.
+    # At the warmup→self-play boundary, switch mode but do NOT copy agent_white's weights into
+    # agent_other immediately. agent_other starts self-play with its randomly initialised
+    # model_target, giving agent_white an easy initial opponent to adapt against.
+    # The first real weight copy happens organically via the periodic win-rate gate below
+    # (~epoch 20,000) once agent_white demonstrates >50% win rate against the random opponent.
     if parser.train_mode == 'curriculum' and curr_epoch == cfg.training_param.WARMUP_EPOCHS:
-        agent_other.model_target.set_weights(agent_white.model_target.get_weights())
         print(f"\n***** Curriculum: warmup complete at epoch {curr_epoch}. Switching to self-play.")
 
     env_params["display_message_line1"] = f"Epoch: {curr_epoch + 1}/{EPOCHS} | Mode: {parser.train_mode}{phase_label}"
@@ -180,22 +180,8 @@ def train(curr_epoch: int):
     # this is reward_history for white
     # reward_history.append(np.sum(ep_reward))
 
-    # Periodically hard-copy agent_white's stable target network into agent_other, but only when
-    # agent_white is winning enough to confirm it has surpassed the current opponent.
-    # - Hard copy (not soft/Polyak) because the win-rate gate already guarantees the new policy is
-    #   better; blending with old weights would unnecessarily dilute that improvement.
-    # - model_target (not model_eval) because it is the temporally-smoothed, lower-variance snapshot,
-    #   producing a more coherent and stable opponent than the noisier online network.
-    if (curr_epoch % self_play_update_rate == 0) and (effective_mode == 'self-play'):
-        recent_win_rate = winning_rate[-1][1] if winning_rate else 0.0
-        threshold = cfg.training_param.SELF_PLAY_UPDATE_WIN_THRESHOLD
-        if recent_win_rate >= threshold:
-            agent_other.model_target.set_weights(agent_white.model_target.get_weights())
-            print(f"\n***** Assign weights to self-play agent (win rate {recent_win_rate:.1%} >= {threshold:.1%})")
-        else:
-            print(f"\n***** Skipped opponent update — win rate {recent_win_rate:.1%} below threshold {threshold:.1%}")
-
-    # log the winning rate at every epoch_win_rate_log and clean up objects
+    # log the winning rate at every epoch_win_rate_log and clean up objects.
+    # This runs before the opponent update check so the gate always reads the freshest win-rate window.
     if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
         winning_rate.append((epoch, np.mean(agent_win)))
         agent_win = []  # clear array to calculate the rate of win for each epoch
@@ -213,6 +199,21 @@ def train(curr_epoch: int):
         # memory cleanup
         n = gc.collect()
         print("\nNumber of unreachable objects collected by GC:{:d}".format(n))
+
+    # Periodically hard-copy agent_white's stable target network into agent_other, but only when
+    # agent_white is winning enough to confirm it has surpassed the current opponent.
+    # - Hard copy (not soft/Polyak) because the win-rate gate already guarantees the new policy is
+    #   better; blending with old weights would unnecessarily dilute that improvement.
+    # - model_target (not model_eval) because it is the temporally-smoothed, lower-variance snapshot,
+    #   producing a more coherent and stable opponent than the noisier online network.
+    if (curr_epoch % self_play_update_rate == 0) and (effective_mode == 'self-play'):
+        recent_win_rate = winning_rate[-1][1] if winning_rate else 0.0
+        threshold = cfg.training_param.SELF_PLAY_UPDATE_WIN_THRESHOLD
+        if recent_win_rate >= threshold:
+            agent_other.model_target.set_weights(agent_white.model_target.get_weights())
+            print(f"\n***** Assign weights to self-play agent (win rate {recent_win_rate:.1%} >= {threshold:.1%})")
+        else:
+            print(f"\n***** Skipped opponent update — win rate {recent_win_rate:.1%} below threshold {threshold:.1%}")
 
 
 # Press the green button in the gutter to run the script.
