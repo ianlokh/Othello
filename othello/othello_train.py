@@ -98,6 +98,7 @@ def train(curr_epoch: int):
     global agent_win
     global winning_rate
     global best_winning_rate
+    global best_checkpoint_epoch
     # global reward_history
     global epoch_win_rate_log
     global epoch_win_rate_log_msg
@@ -120,6 +121,8 @@ def train(curr_epoch: int):
     if parser.train_mode == 'curriculum' and curr_epoch == cfg.training_param.WARMUP_EPOCHS:
         agent_other.model_target.set_weights(agent_white.model_target.get_weights())
         print(f"\n***** Curriculum: warmup complete at epoch {curr_epoch}. Switching to self-play.")
+        best_winning_rate = 0.0
+        print("***** Checkpoint threshold reset to 0.0 for self-play phase.")
 
     env_params["display_message_line1"] = f"Epoch: {curr_epoch + 1}/{EPOCHS} | Mode: {parser.train_mode}{phase_label}"
 
@@ -196,19 +199,36 @@ def train(curr_epoch: int):
             print(f"\n***** Skipped opponent update — win rate {recent_win_rate:.1%} below threshold {threshold:.1%}")
 
     # log the winning rate at every epoch_win_rate_log and clean up objects
-    if (epoch % epoch_win_rate_log == 0) and (epoch > 1):
-        winning_rate.append((epoch, np.mean(agent_win)))
-        agent_win = []  # clear array to calculate the rate of win for each epoch
-        epoch_win_rate_log_msg = "White winning rate (last {:d} rounds): {:.2%}".format(
-            epoch_win_rate_log, winning_rate[-1][1])
-        env_params["display_message_line2"] = epoch_win_rate_log_msg
-        print("\n***** Epoch: {:d}/{:d}, {} *****".format(epoch, EPOCHS, epoch_win_rate_log_msg))
+    if (curr_epoch % epoch_win_rate_log == 0) and (curr_epoch > 1):
+        win_rate = np.mean(agent_win)
+        agent_win = []  # clear array to calculate the rate of win for each window
 
-        # if better winning_rate is found then checkpoint and save model
-        if winning_rate[-1][1] >= best_winning_rate:
-            agent_white.save_model(name="OthelloDQN", save_step="training")
-            print("\n***** Save model at Epoch: {:d}/{:d}".format(epoch, EPOCHS))
-            best_winning_rate = winning_rate[-1][1]
+        phase_flag = 0 if effective_mode == 'random' else 1  # 0=warmup, 1=self-play/other
+
+        # determine checkpoint before appending so the flag is stored in the tuple
+        checkpoint_saved = win_rate >= best_winning_rate
+        winning_rate.append((curr_epoch, win_rate, phase_flag, 1 if checkpoint_saved else 0))
+
+        print("\n***** Epoch: {:d}/{:d}, Win rate (last {:d}): {:.1%} *****".format(
+            curr_epoch, EPOCHS, epoch_win_rate_log, win_rate))
+
+        if checkpoint_saved:
+            save_step = "warmup" if effective_mode == 'random' else "self-play"
+            agent_white.save_model(name="OthelloDQN", save_step=save_step)
+            best_winning_rate = win_rate
+            if effective_mode != 'random':
+                best_checkpoint_epoch = curr_epoch
+            print("\n***** Save model ({}) at Epoch: {:d}/{:d}".format(save_step, curr_epoch, EPOCHS))
+
+        # build compact UI line 2
+        if effective_mode == 'random':
+            epoch_win_rate_log_msg = "Win: {:.1%} (last {:d}) | Warmup".format(win_rate, epoch_win_rate_log)
+        elif best_checkpoint_epoch is None:
+            epoch_win_rate_log_msg = "Win: {:.1%} (last {:d}) | No ckpt yet".format(win_rate, epoch_win_rate_log)
+        else:
+            epoch_win_rate_log_msg = "Win: {:.1%} (last {:d}) | Best: {:.1%} @ep{:d}".format(
+                win_rate, epoch_win_rate_log, best_winning_rate, best_checkpoint_epoch)
+        env_params["display_message_line2"] = epoch_win_rate_log_msg
 
         # memory cleanup
         n = gc.collect()
@@ -221,6 +241,7 @@ if __name__ == '__main__':
     agent_win = []
     winning_rate = []
     best_winning_rate = 0
+    best_checkpoint_epoch = None  # epoch of the best self-play checkpoint; None until first self-play ckpt
     # reward_history = []
     epoch_win_rate_log = cfg.training_param.EPOCH_WIN_RATE_LOG
     self_play_update_rate = cfg.training_param.SELF_PLAY_UPDATE_LOG
@@ -265,13 +286,17 @@ if __name__ == '__main__':
         file.close()
         # convert to dataframe
         win_rate_df = pd.DataFrame(winning_rate)
-        win_rate_df.rename({0: 'epochs', 1: 'win_rate'}, axis=1, inplace=True)
+        win_rate_df.rename({0: 'epochs', 1: 'win_rate', 2: 'phase', 3: 'checkpoint'}, axis=1, inplace=True)
         win_rate_df['mean'] = win_rate_df['win_rate'].rolling(window=10).mean()
 
         fig, ax = plt.subplots(1, 1)
         ax.set_ylim([0, 1])
         win_rate_df.plot(x='epochs', y='win_rate', figsize=(8, 4), ax=ax)
         win_rate_df.plot(x='epochs', y='mean', figsize=(8, 4), ax=ax)
+        ckpt_rows = win_rate_df[win_rate_df['checkpoint'] == 1.0]
+        ax.scatter(ckpt_rows['epochs'], ckpt_rows['win_rate'],
+                   color='green', marker='^', s=40, zorder=5, label='Checkpoint')
+        ax.legend()
         fig.savefig(path + "winning_rate_{:s}.png".format(curr_date), dpi=300)
 
     print(winning_rate)
