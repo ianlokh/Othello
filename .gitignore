@@ -1,5 +1,18 @@
-/.idea/
-/.ipynb_checkpoints/
-/models/
-/othello/models/
-/othello/.ipynb_checkpoints/
+# IDE / OS
+.idea/
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Models / training outputs
+models/
+othello/models/
+
+# Tests
+tests/__init__.py
