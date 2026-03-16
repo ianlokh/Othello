@@ -259,7 +259,7 @@ class training_param:
     # to the screen and Pygame display. The model is checkpointed whenever a new
     # best win rate is achieved at a logging boundary.
 
-    EPOCH_WIN_RATE_LOG = 50     # episodes per win-rate window
+    EPOCH_WIN_RATE_LOG = 200     # episodes per win-rate window 50, 200, 300, 500
 
     # -------------------------------------------------------------------------
     # 3. Curriculum / self-play
