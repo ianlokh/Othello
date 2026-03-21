@@ -12,26 +12,10 @@ from matplotlib import pyplot as plt
 from typing import Any
 
 import gymnasium as gym
-import tensorflow as tf
 
 from os import sys, path
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
-
-# setting this to ensure that we can reproduce the results
-tf.config.threading.set_inter_op_parallelism_threads(1)
-tf.config.threading.set_intra_op_parallelism_threads(1)
-
-# setting log level for tensorflow
-tf.get_logger().setLevel('ERROR')
-
-# setting OS variables for Tensorflow
-os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
-os.environ['TF_GPU_THREAD_COUNT'] = '8'  # if not hvd_utils.is_using_hvd() else str(hvd.size())
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-# Keras RL
-# from rl.agents.dqn import DQNAgent
 
 # for performance profiling
 # import cProfile as cprofile
@@ -46,29 +30,6 @@ from othello import config as cfg
 from othello.argparser import ParserOutput
 
 parser = ParserOutput()
-
-
-# @profile(stream=fp)
-def set_gpu(gpu_ids_list):
-    """
-    :param gpu_ids_list:
-    :return:
-    """
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        try:
-            gpus_used = [gpus[i] for i in gpu_ids_list]
-            tf.config.set_visible_devices(gpus_used, 'GPU')
-            for gpu in gpus_used:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
-        except RuntimeError as e:
-            # Visible devices must be set before GPUs have been initialized
-            print(e)
-
-
-set_gpu([0])
 
 env_name = "othello:othello-pygame-v0"
 env = gym.make(env_name, render_mode="human")
@@ -104,25 +65,38 @@ def train(curr_epoch: int):
     global epoch_win_rate_log_msg
     global self_play_update_rate
     global env_params
+    global in_self_play
 
     # Determine effective opponent mode for this epoch.
-    # In 'curriculum' mode the agent trains against random for WARMUP_EPOCHS then switches to self-play.
+    # In 'curriculum' mode the agent trains against random until both epsilon and win-rate
+    # conditions are met, then switches permanently to self-play.
     if parser.train_mode == 'curriculum':
-        effective_mode = 'random' if curr_epoch < cfg.training_param.WARMUP_EPOCHS else 'self-play'
-        phase_label = " [warmup]" if effective_mode == 'random' else " [self-play]"
+
+        if not in_self_play and curr_epoch >= cfg.training_param.WARMUP_EPOCHS:
+            recent_win_rate = winning_rate[-1][1] if winning_rate else 0.0
+            epsilon_ready = agent_white.epsilon <= cfg.training_param.WARMUP_EPSILON_THRESHOLD
+            win_rate_ready = recent_win_rate >= cfg.training_param.WARMUP_WIN_THRESHOLD
+
+            if epsilon_ready and win_rate_ready:
+                in_self_play = True
+                agent_other.model_target.load_state_dict(agent_white.model_target.state_dict())
+                agent_white.epsilon = cfg.agent_setting.SELF_PLAY_EPSILON
+                agent_white.epsilon_reduce = cfg.agent_setting.EPSILON_REDUCE
+                best_winning_rate = 0.0
+                print(f"\n***** Curriculum: switching to self-play at epoch {curr_epoch} "
+                      f"(ε reset to {cfg.agent_setting.SELF_PLAY_EPSILON}, win={recent_win_rate:.1%})")
+                print("***** Checkpoint threshold reset to 0.0 for self-play phase.")
+            elif curr_epoch % epoch_win_rate_log == 0:
+                print(f"\n***** Warmup extended — "
+                      f"ε={agent_white.epsilon:.3f} (need ≤{cfg.training_param.WARMUP_EPSILON_THRESHOLD}), "
+                      f"win={recent_win_rate:.1%} (need ≥{cfg.training_param.WARMUP_WIN_THRESHOLD:.1%})")
+
+        effective_mode = 'self-play' if in_self_play else 'random'
+        phase_label = " [self-play]" if in_self_play else " [warmup]"
+
     else:
         effective_mode = parser.train_mode
         phase_label = ""
-
-    # At the warmup→self-play boundary, hard-copy the stable target network weights into agent_other
-    # so it starts as a strong opponent rather than an untrained random network.
-    # model_target is used (not model_eval) because it is the temporally-smoothed, lower-variance
-    # snapshot — the same reason DQN uses a target network for bootstrap targets.
-    if parser.train_mode == 'curriculum' and curr_epoch == cfg.training_param.WARMUP_EPOCHS:
-        agent_other.model_target.set_weights(agent_white.model_target.get_weights())
-        print(f"\n***** Curriculum: warmup complete at epoch {curr_epoch}. Switching to self-play.")
-        best_winning_rate = 0.0
-        print("***** Checkpoint threshold reset to 0.0 for self-play phase.")
 
     env_params["display_message_line1"] = f"Epoch: {curr_epoch + 1}/{EPOCHS} | Mode: {parser.train_mode}{phase_label}"
 
@@ -152,7 +126,7 @@ def train(curr_epoch: int):
             ep_reward.append(reward)
         else:  # move by opponent
             if effective_mode == 'self-play':
-                action = agent_other.choose_action(-observation, next_possible_actions)
+                action = agent_other.choose_action(observation, next_possible_actions)
             else:
                 action = random.choice(list(next_possible_actions))
                 action = (action[0] * 8) + action[1]
@@ -161,7 +135,6 @@ def train(curr_epoch: int):
             next_observation = next_observation["state"].reshape((1, 64))
 
             # this is to cater for the case when the last move is by the black player, we want to store the
-            # previous move by white that lead to the win/loss
             if done:
                 agent_white.reward_transition_update(reward)
                 if info["winner"] == "White":
@@ -193,11 +166,8 @@ def train(curr_epoch: int):
         recent_win_rate = winning_rate[-1][1] if winning_rate else 0.0
         threshold = cfg.training_param.SELF_PLAY_UPDATE_WIN_THRESHOLD
         if recent_win_rate >= threshold:
-            agent_other.model_target.set_weights(agent_white.model_target.get_weights())
-            best_winning_rate = cfg.training_param.SELF_PLAY_UPDATE_WIN_THRESHOLD
-            best_checkpoint_epoch = None
+            agent_other.model_target.load_state_dict(agent_white.model_target.state_dict())
             print(f"\n***** Assign weights to self-play agent (win rate {recent_win_rate:.1%} >= {threshold:.1%})")
-            print(f"***** Checkpoint threshold reset to {cfg.training_param.SELF_PLAY_UPDATE_WIN_THRESHOLD:.1%} for new opponent generation.")
         else:
             print(f"\n***** Skipped opponent update — win rate {recent_win_rate:.1%} below threshold {threshold:.1%}")
 
@@ -249,10 +219,14 @@ if __name__ == '__main__':
     epoch_win_rate_log = cfg.training_param.EPOCH_WIN_RATE_LOG
     self_play_update_rate = cfg.training_param.SELF_PLAY_UPDATE_LOG
     epoch_win_rate_log_msg = ""
+    in_self_play = False
     env_params = {
         "display_message_line1": "",
         "display_message_line2": ""
     }
+
+    if parser.train_mode == 'curriculum':
+        agent_white.epsilon_reduce = cfg.agent_setting.WARMUP_EPSILON_REDUCE
 
     # train for no. of epochs
     for epoch in range(EPOCHS):
