@@ -3,8 +3,9 @@ import random
 import sys
 
 import numpy as np
-import tensorflow as tf
-import tensorflow.keras.backend as K
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from scipy.special import softmax
 
@@ -15,8 +16,6 @@ from othello.replay_buffer import UniformReplayBuffer, PrioritizedReplayBuffer
 # import cProfile as cprofile
 # from memory_profiler import profile
 # fp = open("report-agent.log", "w+")  # to capture memory profile logs
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Classic Othello positional weight matrix (from white's perspective).
 # Corners (120) are extremely valuable — they can never be flipped.
@@ -101,100 +100,214 @@ class OthelloDQNModel:
         return model
 '''
 
-class OthelloDQNModel:
+class OthelloDQNModel(nn.Module):
     """
-    Class for the deep neural network model
+    Class for the deep neural network model — PyTorch port of the TensorFlow Sequential model.
+
+    Architecture exactly mirrors the original TF build_model():
+        Dense(64, relu) → Dense(64, relu)
+        Dense(64) → LayerNorm → LeakyReLU
+        Dense(128, relu) × 3
+        Dense(64) → LayerNorm → LeakyReLU
+        Dense(64, relu) → Dense(action_dim, linear)
+
+    Optimizer: Adam with ExponentialDecay LR schedule (staircase=True, decay_steps=10000,
+               decay_rate=0.99) and gradient clipping (norm ≤ 0.5).
+    Loss:      MSELoss — equivalent to tf.keras.losses.MeanSquaredError().
     """
-    def __init__(self, nb_observations, action_dim, learning_rate):
+
+    def __init__(self, nb_observations, action_dim, learning_rate=None):
+        super().__init__()
         self.nb_observations = nb_observations
         self.action_dim = action_dim
-        self.learning_rate = learning_rate
+        # Fall back to config value when called without explicit learning_rate
+        self.learning_rate = learning_rate if learning_rate is not None else cfg.agent_setting.LEARNING_RATE
+
+        # Build network in __init__ so the model is immediately usable for inference
+        # even before build_model() is called (e.g. for shape checks or weight loading).
+        self.net = nn.Sequential(
+            nn.Linear(nb_observations, 64), nn.ReLU(),
+            nn.Linear(64, 64), nn.ReLU(),
+
+            nn.Linear(64, 64),
+            nn.LayerNorm(64),
+            nn.LeakyReLU(),
+
+            # Dense(128, relu) × 3
+            nn.Linear(64, 128), nn.ReLU(),
+            nn.Linear(128, 128), nn.ReLU(),
+            nn.Linear(128, 128), nn.ReLU(),
+
+            nn.Linear(128, 64),
+            nn.LayerNorm(64),
+            nn.LeakyReLU(),
+
+            nn.Linear(64, 64), nn.ReLU(),
+            # Output: linear activation (no softmax — applied post-hoc in choose_action)
+            nn.Linear(64, action_dim),
+        )
+
+        # Optimizer / scheduler / criterion are wired up in build_model()
+        self.optimizer = None
+        self.scheduler = None
+        self.criterion = None
 
     def residual_block(self, inputs, filters):
         """
         Define a residual block with two convolutional layers.
+        (Currently unused — retained for API compatibility.)
 
         :param inputs: Input tensor to the block.
         :param filters: Number of filters for the convolutions.
-        :return: Output tensor after applying the residual block.
+        :return: nn.Sequential block (skip connection must be applied externally).
         """
-        x = tf.keras.layers.Conv2D(filters, (3, 3), padding='same', activation='relu')(inputs)
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.Conv2D(filters, (3, 3), padding='same')(x)  # No activation here
-        x = tf.keras.layers.BatchNormalization()(x)
-
-        x = tf.keras.layers.Add()([x, inputs])  # Skip connection
-
-        return tf.keras.layers.Activation('relu')(x)
+        return nn.Sequential(
+            nn.Conv2d(filters, filters, kernel_size=3, padding=1),
+            nn.BatchNorm2d(filters),
+            nn.ReLU(),
+            nn.Conv2d(filters, filters, kernel_size=3, padding=1),
+            nn.BatchNorm2d(filters),
+        )
 
     def build_model(self):
         """
-        build tensorflow model
-        :return: tensorflow model
+        Wire up the optimizer, LR scheduler, and loss function, then return self.
+
+        Usage mirrors TF:  model = OthelloDQNModel(...).build_model()
+
+        Optimizer: Adam with ExponentialDecay (staircase=True) — identical to TF:
+            lr = initial_lr * 0.99 ^ floor(step / 10_000)
+            PyTorch equivalent: StepLR(step_size=10_000, gamma=0.99),
+            called once per train_on_batch invocation.
+        Gradient clipping: norm ≤ 0.5 (applied inside train_on_batch, mirrors TF clipnorm=0.5).
+        Loss: MSELoss (matches tf.keras.losses.MeanSquaredError).
+
+        :return: self
         """
-        def root_mean_squared_log_error(y_true, y_pred):
-            msle = tf.keras.losses.MeanSquaredLogarithmicError()
-            return K.sqrt(msle(y_true, y_pred))
-
-        def root_mean_squared_error(y_true, y_pred):
-            mse = tf.keras.losses.MeanSquaredError()
-            return K.sqrt(mse(y_true, y_pred))
-
-        _model = tf.keras.Sequential([
-            tf.keras.layers.Dense(64, input_shape=(1, self.nb_observations), activation="relu"),
-            tf.keras.layers.Dense(64, activation="relu"),
-
-            tf.keras.layers.Dense(64),
-            tf.keras.layers.LayerNormalization(),
-            tf.keras.layers.LeakyReLU(),
-
-            # tf.keras.layers.Dense(128, activation="relu"),
-            # tf.keras.layers.Dropout(rate=0.3),
-            # tf.keras.layers.Dense(128, activation="relu"),
-
-            tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(128, activation="relu"),
-
-            tf.keras.layers.Dense(64),
-            tf.keras.layers.LayerNormalization(),
-            tf.keras.layers.LeakyReLU(),
-
-            tf.keras.layers.Dense(64, activation="relu"),
-            # don't need softmax here because the subsequent post-processing will do the softmax
-            # tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.softmax)
-            tf.keras.layers.Dense(self.action_dim, activation=tf.keras.activations.linear)
-
-            # Notes:
-            # If you are training a binary classifier you can solve the problem with sigmoid activation + binary crossentropy loss.
-            # If you are training a multi-class classifier with multiple classes, then you need softmax activation + crossentropy loss.
-            # If you are training a regressor you need a proper activation function with MSE or MAE loss,
-            # usually.With "proper" I mean linear, in case your output is unbounded, or ReLU in case your output
-            # takes only positive values.
-
-        ])
-
-        # The following metrics and losses do not work
-        # tf.keras.metrics.sparse_categorical_accuracy
-        # tf.keras.metrics.sparse_categorical_crossentropy
-        # tf.keras.losses.MeanAbsolutePercentageError()
-
-        # Decay LR by 10% every 10,000 learn steps (one step = one train_on_batch call).
-        # Over 75,000 epochs this brings LR from 1e-4 down to ~4.8e-5, helping the
-        # network fine-tune later in training without overwriting earlier Q-values.
-        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-            initial_learning_rate=self.learning_rate,
-            decay_steps=10000,
-            decay_rate=0.99,
-            staircase=True,
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        # StepLR decays by gamma every step_size scheduler.step() calls,
+        # which equals one train_on_batch call → matches TF ExponentialDecay staircase.
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer, step_size=10000, gamma=0.99
         )
+        self.criterion = nn.MSELoss()
+        return self
 
-        _model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule,
-                                                          clipnorm=0.5),
-                       loss=tf.keras.losses.MeanSquaredError(),
-                       metrics=['accuracy'])
-        return _model
+    def forward(self, x):
+        """
+        Forward pass. Handles both 2-D and 3-D inputs to remain compatible with the
+        TF model's input_shape=(1, nb_observations) convention used in OthelloDQN.
+
+        Input shapes accepted:
+            (batch, nb_observations)      → output (batch, action_dim)
+            (batch, 1, nb_observations)   → output (batch, 1, action_dim)
+
+        The 3-D path preserves the middle dimension so that OthelloDQN.learn()'s
+        indexing pattern  targets[i][0][action]  continues to work unchanged.
+
+        :param x: numpy array or torch.Tensor
+        :return: torch.Tensor of Q-values
+        """
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x, dtype=torch.float32)
+
+        is_3d = (x.dim() == 3)
+        if is_3d:
+            x = x.squeeze(1)       # (batch, 1, obs) → (batch, obs)
+
+        out = self.net(x)          # (batch, action_dim)
+
+        if is_3d:
+            out = out.unsqueeze(1)  # (batch, action_dim) → (batch, 1, action_dim)
+
+        return out
+
+    def predict_on_batch(self, x):
+        """
+        Run a forward pass in eval / no-grad mode and return a numpy array.
+        Output shape mirrors forward(): preserves 3-D structure if input is 3-D.
+
+        :param x: numpy array or torch.Tensor
+        :return: numpy array of Q-values
+        """
+        self.eval()
+        with torch.no_grad():
+            out = self.forward(x)
+        return out.cpu().numpy()
+
+    def train_on_batch(self, x, y, sample_weight=None):
+        """
+        Perform one gradient step.
+
+        Matches TF model_eval.train_on_batch(states, targets, sample_weight=is_weights):
+        - Computes MSE loss, optionally weighted per-sample for PER.
+        - Clips gradient norm to 0.5 (TF clipnorm=0.5).
+        - Steps both optimizer and LR scheduler.
+
+        :param x: numpy array of states, shape (batch, 1, obs) or (batch, obs)
+        :param y: numpy array of Q-value targets, same shape as forward output
+        :param sample_weight: optional numpy array of IS weights, shape (batch,)
+        :return: (loss_value: float, metric: float)  — metric is 0.0 (accuracy not applicable)
+        """
+        self.train()
+        x_t = torch.tensor(x, dtype=torch.float32)
+        y_t = torch.tensor(y, dtype=torch.float32)
+
+        self.optimizer.zero_grad()
+        pred = self(x_t)
+
+        # Per-element MSE, then reduce with optional IS weighting
+        loss_per_elem = F.mse_loss(pred, y_t, reduction='none')
+
+        if sample_weight is not None:
+            w = torch.tensor(sample_weight, dtype=torch.float32)
+            # Average over all non-batch dims, then take weighted mean over batch
+            loss = (w * loss_per_elem.flatten(start_dim=1).mean(dim=1)).mean()
+        else:
+            loss = loss_per_elem.mean()
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+        self.optimizer.step()
+        self.scheduler.step()
+
+        return loss.item(), 0.0
+
+    def get_weights(self):
+        """
+        Return model parameters as a list of numpy arrays.
+        Used by OthelloDQN to sync eval → target network weights.
+
+        :return: list of numpy arrays, one per parameter tensor
+        """
+        return [p.detach().cpu().numpy() for p in self.parameters()]
+
+    def set_weights(self, weights):
+        """
+        Load parameters from a list of numpy arrays (produced by get_weights()).
+
+        :param weights: list of numpy arrays matching the parameter order
+        """
+        with torch.no_grad():
+            for param, w in zip(self.parameters(), weights):
+                param.data.copy_(torch.tensor(w, dtype=torch.float32))
+
+    def save(self, path):
+        """
+        Save the model state dict to *path*.
+
+        :param path: file path (conventionally ending in .pt)
+        """
+        torch.save(self.state_dict(), path)
+
+    def save_weights(self, path, overwrite=True):
+        """
+        Save the model state dict to *path* (alias for save()).
+
+        :param path: file path
+        :param overwrite: ignored (always overwrites, matching TF behaviour)
+        """
+        torch.save(self.state_dict(), path)
 
 
 class OthelloDQN:
@@ -253,11 +366,13 @@ class OthelloDQN:
             # self.model_eval = self.build_model(nb_observations)  # this is the q network
             self.model_eval = OthelloDQNModel(nb_observations, self.action_dim,
                                               self.learning_rate).build_model()  # this is the q network
+            self.model_eval.train()   # online network stays in training mode
 
         # regardless of training (random or self-play) target network will always be created because this is the network
         # that will be used to predict the action
         self.model_target = OthelloDQNModel(nb_observations, self.action_dim,
                                             self.learning_rate).build_model()  # this is the target network
+        self.model_target.eval()      # target network stays in inference mode
 
         # array to store the moves made by the agent
         self.epsilon_plays = []
@@ -274,7 +389,7 @@ class OthelloDQN:
         """
         os.environ['PYTHONHASHSEED'] = str(seed)
         random.seed(seed)
-        tf.random.set_seed(seed)
+        torch.manual_seed(seed)
         np.random.seed(seed)
         print("Seed:{:d}".format(seed))
 
@@ -285,8 +400,6 @@ class OthelloDQN:
         :return:
         """
         self.set_env_seeds(seed=seed)
-        os.environ['TF_DETERMINISTIC_OPS'] = '1'
-        os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
 
     @staticmethod
     def _compute_potential(observation):
@@ -343,8 +456,7 @@ class OthelloDQN:
         if np.random.random() > self.epsilon:
             observation = np.expand_dims(observation, axis=0)  # (1, 64, )
 
-            with tf.device('/cpu:0'):
-                prediction = self.model_target(observation, training=False).numpy()
+            prediction = self.model_target.predict_on_batch(observation)
 
             prediction = softmax(np.ma.array(prediction, mask=mask).filled(fill_value=-1e9), axis=None)
 
@@ -365,8 +477,9 @@ class OthelloDQN:
     @staticmethod
     def _soft_update(target_model, source_model, alpha):
         """Polyak (soft) update: target <- (1-alpha)*target + alpha*source."""
-        for t_var, s_var in zip(target_model.variables, source_model.variables):
-            t_var.assign(t_var * (1 - alpha) + s_var * alpha)
+        with torch.no_grad():
+            for t_param, s_param in zip(target_model.parameters(), source_model.parameters()):
+                t_param.data.mul_(1 - alpha).add_(s_param.data * alpha)
 
     # assign weights from trained agent into self-play agent
     # @profile(stream=fp)
@@ -511,8 +624,9 @@ class OthelloDQN:
         """
         save_dir = "./models/{0}".format(save_step)
         os.makedirs(save_dir, exist_ok=True)
-        self.model_target.save_weights("{0}/{1}.weights.h5".format(save_dir, name), overwrite=True)
-        self.model_target.save("{0}/{1}_model.keras".format(save_dir, name))
+        model_path = "{0}/{1}.pt".format(save_dir, name)
+        self.model_target.save(model_path)
+        self.model_full_path = model_path   # enables reload_model() to find the saved file
 
     def load_model(self, path="", name="OthelloDQN", format_type="model"):
         """
@@ -523,28 +637,20 @@ class OthelloDQN:
             sys.exit("cannot load %s" % name)
 
         try:
-            if format_type == "model":
-                # If the user selected the .keras file directly, use it as-is;
-                # otherwise treat path as a directory and append the filename.
-                if path.endswith(".keras") and os.path.isfile(path):
-                    model_path = path
-                else:
-                    model_path = "{0}/{1}_model.keras".format(path, name)
-                print(model_path)
-                self.model_eval = tf.keras.models.load_model(model_path)
-                self.model_full_path = model_path
-            elif format_type == "weights":
-                if path.endswith(".weights.h5") and os.path.isfile(path):
-                    weights_path = path
-                else:
-                    weights_path = "{0}/{1}.weights.h5".format(path, name)
-                print(weights_path)
-                self.model_eval.load_weights(weights_path)
-                self.model_full_path = weights_path
+            # Resolve model path — accept a direct .pt file or a directory + name
+            if path.endswith(".pt") and os.path.isfile(path):
+                model_path = path
+            else:
+                model_path = "{0}/{1}.pt".format(path, name)
+            print(model_path)
+            state_dict = torch.load(model_path, weights_only=True)
+            self.model_eval.load_state_dict(state_dict)
+            self.model_full_path = model_path
 
             self.model_target.set_weights(self.model_eval.get_weights())
+            self.model_target.eval()
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
-        except ValueError as ve:
+        except (ValueError, RuntimeError, FileNotFoundError) as ve:
             error_str = str(ve)
             print(error_str)
             return False, "Failed to load agent!"
@@ -564,10 +670,12 @@ class OthelloDQN:
 
         # load model
         try:
-            self.model_eval = tf.keras.models.load_model(self.model_full_path)
+            state_dict = torch.load(self.model_full_path, weights_only=True)
+            self.model_eval.load_state_dict(state_dict)
             self.model_target.set_weights(self.model_eval.get_weights())
+            self.model_target.eval()
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
-        except (ValueError, OSError) as ve:
+        except (ValueError, RuntimeError, OSError) as ve:
             error_str = str(ve)
             print(error_str)
             return False, "Failed to load agent!"
