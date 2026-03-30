@@ -61,7 +61,7 @@ def test_check1_shape():
     x3d = torch.zeros(8, 1, 64, device=DEVICE)
     with torch.no_grad():
         out3d = model(x3d)
-    assert out3d.shape == (8, 64), f"3D input: expected (8, 64), got {out3d.shape}"
+    assert out3d.shape == (8, 1, 64), f"3D input: expected (8, 1, 64), got {out3d.shape}"
 
     print(f"\n  [Check 1] 2D ({x2d.shape}) → {out2d.shape}  ✓")
     print(f"  [Check 1] 3D ({x3d.shape}) → {out3d.shape}  ✓")
@@ -185,3 +185,22 @@ def test_check5_device_placement():
 
     print(f"\n  [Check 5] model_eval on {eval_device}  ✓")
     print(f"  [Check 5] model_target on {tgt_device}  ✓")
+
+
+# ---------------------------------------------------------------------------
+# Check 6 — Gradient Clipping Check
+# ---------------------------------------------------------------------------
+
+def test_check6_gradient_clipping():
+    """After train_on_batch, no parameter gradient norm should exceed 0.5."""
+    agent = _make_agent(seed=42)
+    agent.learn()
+
+    for name, param in agent.model_eval.named_parameters():
+        if param.grad is not None:
+            grad_norm = param.grad.norm().item()
+            assert grad_norm <= 0.5 + 1e-5, (
+                f"Gradient norm for '{name}' is {grad_norm:.4f}, exceeds clip threshold 0.5"
+            )
+
+    print("\n  [Check 6] All gradient norms ≤ 0.5  ✓")

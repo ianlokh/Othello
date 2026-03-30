@@ -38,9 +38,9 @@ def filled_agent():
 def test_instantiation(white_agent):
     assert hasattr(white_agent, "model_eval")
     assert hasattr(white_agent, "model_target")
-    assert hasattr(white_agent, "optimizer")
-    assert hasattr(white_agent, "scheduler")
-    assert hasattr(white_agent, "criterion")
+    assert white_agent.model_eval.optimizer is not None
+    assert white_agent.model_eval.scheduler is not None
+    assert white_agent.model_eval.criterion is not None
     assert not white_agent.model_target.training, "model_target must be in eval() mode"
     assert white_agent.model_eval.training, "model_eval must be in train() mode"
 
@@ -155,7 +155,10 @@ def test_reward_transition_update_patches_values():
     BEFORE FIX: test_reward_transition_update only checked no-crash, not actual patching.
     This test verifies the actual patch: reward is added, done is flipped.
     """
+    from othello.replay_buffer import UniformReplayBuffer
     agent = OthelloDQN(nb_observations=64, player="white", mode="training", seed=5)
+    # Force uniform buffer so we can inspect via _buffer[-1]
+    agent.replay_buffer = UniformReplayBuffer(capacity=1000)
     obs = np.zeros((1, 64), dtype=np.float32)
     nobs = np.zeros((1, 64), dtype=np.float32)
     # All-zero observations → shaping adds 0.0 → stored reward == 0.0
@@ -208,7 +211,7 @@ def test_loss_only_on_taken_action_gradient():
     for _ in range(40):
         agent.store_transition(obs, FIXED_ACTION, 1.0, False, nobs)
 
-    agent.optimizer.zero_grad()
+    agent.model_eval.optimizer.zero_grad()
     agent.learn()
 
     # Last layer is the final nn.Linear(64, 64) → weight shape (64, 64)
@@ -277,5 +280,85 @@ def test_learn_returns_loss():
     assert result is not None, "learn() returned None — add 'return loss.item()'"
     assert isinstance(result, float), f"learn() should return float, got {type(result)}"
     assert np.isfinite(result), f"learn() returned non-finite loss: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Model-level tests
+# ---------------------------------------------------------------------------
+
+def test_predict_on_batch_no_grad(white_agent):
+    """predict_on_batch() must not accumulate gradients."""
+    obs = np.zeros((1, 1, 64), dtype=np.float32)
+    white_agent.model_eval.predict_on_batch(obs)
+    for param in white_agent.model_eval.parameters():
+        assert param.grad is None or param.grad.abs().sum() == 0, \
+            "predict_on_batch() should not produce gradients"
+
+
+def test_train_on_batch_updates_weights(white_agent):
+    """A single train_on_batch() call must change model weights."""
+    before = {k: v.clone() for k, v in white_agent.model_eval.state_dict().items()}
+    x = np.random.randn(4, 1, 64).astype(np.float32)
+    y = np.random.randn(4, 1, 64).astype(np.float32)
+    white_agent.model_eval.train_on_batch(x, y)
+    after = white_agent.model_eval.state_dict()
+    changed = any(
+        not torch.equal(before[k].float(), after[k].float())
+        for k in before if after[k].dtype.is_floating_point
+    )
+    assert changed, "Weights did not change after train_on_batch()"
+
+
+def test_train_on_batch_with_sample_weights(white_agent):
+    """IS-weighted loss should differ from unweighted loss."""
+    x = np.random.randn(4, 1, 64).astype(np.float32)
+    y = np.random.randn(4, 1, 64).astype(np.float32)
+    loss_unweighted, _ = white_agent.model_eval.train_on_batch(x, y)
+
+    # Reset weights so the comparison is fair
+    white_agent.model_eval.load_state_dict(white_agent.model_target.state_dict())
+    white_agent.model_eval.build_model()
+    weights = np.array([0.1, 0.1, 10.0, 10.0], dtype=np.float32)
+    loss_weighted, _ = white_agent.model_eval.train_on_batch(x, y, sample_weight=weights)
+    # With highly skewed weights the two losses should differ
+    assert loss_unweighted != pytest.approx(loss_weighted, abs=1e-6), \
+        "Weighted and unweighted losses should differ with skewed IS weights"
+
+
+def test_lr_scheduler_decays():
+    """LR must decrease after sufficient scheduler steps."""
+    model = OthelloDQNModel(64, 64).build_model()
+    initial_lr = model.optimizer.param_groups[0]["lr"]
+    x = np.random.randn(2, 64).astype(np.float32)
+    y = np.random.randn(2, 64).astype(np.float32)
+    # StepLR decays every 10000 steps
+    for _ in range(10001):
+        model.train_on_batch(x, y)
+    current_lr = model.optimizer.param_groups[0]["lr"]
+    assert current_lr < initial_lr, \
+        f"LR should decay after 10k+ steps: initial={initial_lr}, current={current_lr}"
+
+
+def test_model_persistence_round_trips():
+    """Both get/set_weights() and save()/load_state_dict() must preserve parameters."""
+    import tempfile
+    model = OthelloDQNModel(64, 64).build_model()
+
+    # get_weights / set_weights round trip
+    original_weights = model.get_weights()
+    model2 = OthelloDQNModel(64, 64).build_model()
+    model2.set_weights(original_weights)
+    for p1, p2 in zip(model.parameters(), model2.parameters()):
+        assert torch.allclose(p1, p2, atol=1e-6), "get/set_weights round trip failed"
+
+    # save / load_state_dict round trip
+    with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+        model.save(f.name)
+        model3 = OthelloDQNModel(64, 64).build_model()
+        model3.load_state_dict(torch.load(f.name, weights_only=True))
+    for k in model.state_dict():
+        assert torch.allclose(
+            model.state_dict()[k].float(), model3.state_dict()[k].float(), atol=1e-6
+        ), f"save/load round trip failed at '{k}'"
 
 

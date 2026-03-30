@@ -586,12 +586,14 @@ class OthelloEnv(gym.Env):
         :return:
         """
         try:
+            # bounds check BEFORE array access — negative indices silently wrap in NumPy
+            if (y < 0 or y >= 8) or (x < 0 or x >= 8):
+                return False, []
+
             cell_value = self.game_board[x, y]
 
-            # if the cell is a 0 or out of bounds then end the recursion and return the current flip state and token
-            # list as what is recorded thus far
-            if (cell_value == 0) or (y < 0 or y >= 8) or (x < 0 or x >= 8):
-                # return _flip_tokens, _flip_seq
+            # if the cell is empty then end the recursion
+            if cell_value == 0:
                 return False, []
 
             # if the cell is not the player's cell then mark for flipping
@@ -789,7 +791,7 @@ class OthelloEnv(gym.Env):
         if done:
             conclusion = "\nGame Over! "
             if _score_black == _score_white:  # Tie
-                reward += 2
+                reward += cfg.agent_setting.TIE
                 self.winner = "Tie"
                 conclusion += "No winner, ends up a Tie"
             elif _score_black > _score_white:
@@ -812,7 +814,7 @@ class OthelloEnv(gym.Env):
         # self.prof.disable()
 
         # additional parameter truncated is always FALSE
-        return observation, reward, done, FALSE, info
+        return observation, reward, done, False, info
 
     def get_random_action(self):
         """

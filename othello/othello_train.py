@@ -12,23 +12,10 @@ from matplotlib import pyplot as plt
 from typing import Any
 
 import gymnasium as gym
-import tensorflow as tf
 
 from os import sys, path
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
-
-# setting this to ensure that we can reproduce the results
-tf.config.threading.set_inter_op_parallelism_threads(1)
-tf.config.threading.set_intra_op_parallelism_threads(1)
-
-# setting log level for tensorflow
-tf.get_logger().setLevel('ERROR')
-
-# setting OS variables for Tensorflow
-os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
-os.environ['TF_GPU_THREAD_COUNT'] = '8'  # if not hvd_utils.is_using_hvd() else str(hvd.size())
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Keras RL
 # from rl.agents.dqn import DQNAgent
@@ -47,28 +34,6 @@ from othello.argparser import ParserOutput
 
 parser = ParserOutput()
 
-
-# @profile(stream=fp)
-def set_gpu(gpu_ids_list):
-    """
-    :param gpu_ids_list:
-    :return:
-    """
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        try:
-            gpus_used = [gpus[i] for i in gpu_ids_list]
-            tf.config.set_visible_devices(gpus_used, 'GPU')
-            for gpu in gpus_used:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
-        except RuntimeError as e:
-            # Visible devices must be set before GPUs have been initialized
-            print(e)
-
-
-set_gpu([0])
 
 env_name = "othello:othello-pygame-v0"
 env = gym.make(env_name, render_mode="human")

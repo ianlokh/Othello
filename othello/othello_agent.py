@@ -533,8 +533,9 @@ class OthelloDQN:
         if len(self.replay_buffer) < self.batch_size:
             return
 
-        # sync model_eval and model_targets periodically
-        if self.learn_step_counter % self.replace_target_iter == 0:
+        # sync model_eval and model_targets periodically, but never at step 0
+        # (0 % N == 0 is always True, which would fire before any gradient update)
+        if self.learn_step_counter > 0 and self.learn_step_counter % self.replace_target_iter == 0:
             self._tgt_evl_sync()
 
         # sample from replay buffer (uniform or prioritized)
@@ -644,10 +645,11 @@ class OthelloDQN:
                 model_path = "{0}/{1}.pt".format(path, name)
             print(model_path)
             state_dict = torch.load(model_path, weights_only=True)
-            self.model_eval.load_state_dict(state_dict)
+            if self.player == "white":
+                self.model_eval.load_state_dict(state_dict)
             self.model_full_path = model_path
 
-            self.model_target.set_weights(self.model_eval.get_weights())
+            self.model_target.load_state_dict(state_dict)
             self.model_target.eval()
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
         except (ValueError, RuntimeError, FileNotFoundError) as ve:
@@ -670,8 +672,9 @@ class OthelloDQN:
 
         # load model
         try:
-            state_dict = torch.load(self.model_full_path, weights_only=True)
+            state_dict = torch.load(path, weights_only=True)
             self.model_eval.load_state_dict(state_dict)
+            self.model_full_path = path
             self.model_target.set_weights(self.model_eval.get_weights())
             self.model_target.eval()
             return True, "Successfully loaded agent from\n{0}".format(self.model_full_path)
